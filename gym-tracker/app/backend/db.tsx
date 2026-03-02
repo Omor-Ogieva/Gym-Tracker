@@ -56,6 +56,13 @@ export const db = {
     return localDb.getUser();
   },
 
+  getUserProfile: async (userId: string) => {
+    if (isOnline) {
+      return supabase.from("users").select("*").eq("user_id", userId).single();
+    }
+    return localDb.getUserProfile(userId);
+  },
+
   onAuthStateChange: (callback: (event: string, session: any) => void) => {
     if (isOnline) {
       return supabase.auth.onAuthStateChange(callback);

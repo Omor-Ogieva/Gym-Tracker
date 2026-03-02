@@ -115,6 +115,11 @@ export const localDb = {
     return { data: { user: localSession?.user ?? null } };
   },
 
+  getUserProfile: async (userId: string) => {
+    const user = localUsers.find((u) => u.user_id === userId) ?? null;
+    return { data: user, error: user ? null : { message: "User not found" } };
+  },
+
   onAuthStateChange: (callback: (event: string, session: any) => void) => {
     return {
       data: {

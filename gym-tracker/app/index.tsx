@@ -14,6 +14,10 @@ export default function Index() {
       <Text style={styles.title}>Home</Text>
       {!isOnline && <Text style={styles.offlineText}>⚡ Offline Mode</Text>}
 
+      <Pressable style={styles.button} onPress={() => router.push("/profile")}>
+        <Text style={styles.buttonText}>My Profile</Text>
+      </Pressable>
+
       <Pressable style={styles.button} onPress={() => router.push("/test")}>
         <Text style={styles.buttonText}>Go to Supabase Test</Text>
       </Pressable>
