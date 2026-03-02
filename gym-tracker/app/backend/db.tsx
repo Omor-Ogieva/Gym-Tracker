@@ -168,4 +168,198 @@ export const db = {
     }
     return localDb.updateRoutineExerciseSet(routineSetId, updates);
   },
+
+  // Workout Sessions
+  startWorkoutSession: async (params: { routine_id: number | null; session_name: string; user_id: string }) => {
+    if (isOnline) {
+      const now = new Date();
+      return supabase.from("workout_sessions").insert({
+        routine_id: params.routine_id,
+        session_name: params.session_name,
+        session_date: now.toISOString().split("T")[0],
+        start_time: now.toTimeString().split(" ")[0],
+        user_id: params.user_id,
+      }).select().single();
+    }
+    return localDb.startWorkoutSession(params);
+  },
+
+  finishWorkoutSession: async (sessionId: number, notes?: string) => {
+    if (isOnline) {
+      const now = new Date();
+      return supabase.from("workout_sessions").update({
+        end_time: now.toTimeString().split(" ")[0],
+        notes,
+      }).eq("session_id", sessionId);
+    }
+    return localDb.finishWorkoutSession(sessionId, notes);
+  },
+
+  getWorkoutSessions: async (userId: string) => {
+    if (isOnline) {
+      return supabase.from("workout_sessions")
+        .select("*")
+        .eq("user_id", userId)
+        .not("end_time", "is", null)
+        .order("created_at", { ascending: false });
+    }
+    return localDb.getWorkoutSessions(userId);
+  },
+
+  getWorkoutSession: async (sessionId: number) => {
+    if (isOnline) {
+      return supabase.from("workout_sessions")
+        .select("*")
+        .eq("session_id", sessionId)
+        .single();
+    }
+    return localDb.getWorkoutSession(sessionId);
+  },
+
+  getActiveSession: async (userId: string) => {
+    if (isOnline) {
+      return supabase.from("workout_sessions")
+        .select("*")
+        .eq("user_id", userId)
+        .is("end_time", null)
+        .maybeSingle();
+    }
+    return localDb.getActiveSession(userId);
+  },
+
+  updateWorkoutSession: async (sessionId: number, updates: { notes?: string; session_name?: string }) => {
+    if (isOnline) {
+      return supabase.from("workout_sessions")
+        .update(updates)
+        .eq("session_id", sessionId);
+    }
+    return localDb.updateWorkoutSession(sessionId, updates);
+  },
+
+  deleteWorkoutSession: async (sessionId: number) => {
+    if (isOnline) {
+      // Delete child records first (Supabase won't cascade unless FK has ON DELETE CASCADE)
+      const { data: exercises } = await supabase.from("session_exercises")
+        .select("session_exercise_id")
+        .eq("session_id", sessionId);
+      
+      for (const ex of exercises ?? []) {
+        await supabase.from("session_exercise_sets")
+          .delete()
+          .eq("session_exercise_id", ex.session_exercise_id);
+      }
+      await supabase.from("session_exercises").delete().eq("session_id", sessionId);
+      return supabase.from("workout_sessions").delete().eq("session_id", sessionId);
+    }
+    return localDb.deleteWorkoutSession(sessionId);
+  },
+
+  // Session Exercises
+  getSessionExercises: async (sessionId: number) => {
+    if (isOnline) {
+      return supabase.from("session_exercises")
+        .select("*")
+        .eq("session_id", sessionId)
+        .order("exercise_order");
+    }
+    return localDb.getSessionExercises(sessionId);
+  },
+
+  insertSessionExercise: async (exercise: { session_id: number; exercise_id: string; exercise_name: string; exercise_order: number; notes: string | null }) => {
+    if (isOnline) {
+      return supabase.from("session_exercises").insert(exercise).select().single();
+    }
+    return localDb.insertSessionExercise(exercise);
+  },
+
+  deleteSessionExercise: async (sessionExerciseId: number) => {
+    if (isOnline) {
+      await supabase.from("session_exercise_sets").delete().eq("session_exercise_id", sessionExerciseId);
+      return supabase.from("session_exercises").delete().eq("session_exercise_id", sessionExerciseId);
+    }
+    return localDb.deleteSessionExercise(sessionExerciseId);
+  },
+
+  // Session Exercise Sets
+  getSessionExerciseSets: async (sessionExerciseId: number) => {
+    if (isOnline) {
+      return supabase.from("session_exercise_sets")
+        .select("*")
+        .eq("session_exercise_id", sessionExerciseId)
+        .order("set_number");
+    }
+    return localDb.getSessionExerciseSets(sessionExerciseId);
+  },
+
+  insertSessionExerciseSet: async (set: { session_exercise_id: number; set_number: number; weight: number | null; reps: number | null; is_warmup: boolean }) => {
+    if (isOnline) {
+      return supabase.from("session_exercise_sets").insert(set).select().single();
+    }
+    return localDb.insertSessionExerciseSet(set);
+  },
+
+  updateSessionExerciseSet: async (sessionSetId: number, updates: { reps?: number | null; weight?: number | null; is_warmup?: boolean; completed?: boolean }) => {
+    if (isOnline) {
+      return supabase.from("session_exercise_sets").update(updates).eq("session_set_id", sessionSetId);
+    }
+    return localDb.updateSessionExerciseSet(sessionSetId, updates);
+  },
+
+  deleteSessionExerciseSet: async (sessionSetId: number) => {
+    if (isOnline) {
+      return supabase.from("session_exercise_sets").delete().eq("session_set_id", sessionSetId);
+    }
+    return localDb.deleteSessionExerciseSet(sessionSetId);
+  },
+
+  // Start from routine (copies template → live session)
+  startWorkoutFromRoutine: async (routineId: number, userId: string) => {
+    if (isOnline) {
+      // Fetch routine
+      const { data: routine } = await supabase.from("routines").select("*").eq("routine_id", routineId).single();
+      if (!routine) return { data: null, error: { message: "Routine not found" } };
+
+      const now = new Date();
+      const { data: session, error: sessionErr } = await supabase.from("workout_sessions").insert({
+        routine_id: routineId,
+        session_name: routine.routine_name,
+        session_date: now.toISOString().split("T")[0],
+        start_time: now.toTimeString().split(" ")[0],
+        user_id: userId,
+      }).select().single();
+      if (sessionErr) return { data: null, error: sessionErr };
+
+      // Copy exercises
+      const { data: exercises } = await supabase.from("routine_exercises")
+        .select("*").eq("routine_id", routineId).order("exercise_order");
+
+      for (const ex of exercises ?? []) {
+        const { data: sessionEx } = await supabase.from("session_exercises").insert({
+          session_id: session.session_id,
+          exercise_id: ex.exercise_id,
+          exercise_name: ex.exercise_name,
+          exercise_order: ex.exercise_order,
+          notes: null,
+        }).select().single();
+
+        if (sessionEx) {
+          const { data: templateSets } = await supabase.from("routine_exercise_sets")
+            .select("*").eq("routine_exercise_id", ex.routine_exercise_id).order("set_number");
+
+          for (const ts of templateSets ?? []) {
+            await supabase.from("session_exercise_sets").insert({
+              session_exercise_id: sessionEx.session_exercise_id,
+              set_number: ts.set_number,
+              weight: ts.target_weight,
+              reps: ts.target_reps,
+              is_warmup: ts.is_warmup,
+            });
+          }
+        }
+      }
+
+      return { data: session, error: null };
+    }
+    return localDb.startWorkoutFromRoutine(routineId, userId);
+  },
 };

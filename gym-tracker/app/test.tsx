@@ -350,6 +350,20 @@ export default function TestScreen() {
                 </Pressable>
               </Pressable>
 
+              {/* Start Workout button */}
+              <Pressable
+                style={{ backgroundColor: "#22c55e", paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, marginTop: 4, alignSelf: "flex-start" }}
+                onPress={async () => {
+                  const { data: { user } } = await db.getUser();
+                  if (!user) { setError("Not authenticated"); return; }
+                  const { data: session, error: err } = await db.startWorkoutFromRoutine(item.routine_id, user.id);
+                  if (err) { setError(err.message); return; }
+                  router.push({ pathname: "/workout", params: { sessionId: String(session.session_id) } });
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>▶ Start Workout</Text>
+              </Pressable>
+
               {/* ---- Exercises for selected routine ---- */}
               {selectedRoutineId === item.routine_id && (
                 <View style={styles.exercisesSection}>

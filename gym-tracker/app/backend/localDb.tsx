@@ -32,15 +32,52 @@ type RoutineExerciseSet = {
   is_warmup: boolean;
 };
 
+type WorkoutSession = {
+  session_id: number;
+  routine_id: number | null;
+  session_name: string;
+  session_date: string;       // date (YYYY-MM-DD)
+  start_time: string;         // time (HH:MM:SS)
+  end_time: string | null;    // time (HH:MM:SS)
+  notes: string | null;
+  created_at: string;
+  user_id: string;
+};
+
+type SessionExercise = {
+  session_exercise_id: number;
+  session_id: number;
+  exercise_id: string;
+  exercise_name: string;
+  exercise_order: number;
+  notes: string | null;
+};
+
+type SessionExerciseSet = {
+  session_set_id: number;
+  session_exercise_id: number;
+  set_number: number;
+  weight: number | null;
+  reps: number | null;
+  is_warmup: boolean;
+  completed: boolean;
+};
+
 let localUsers: User[] = [];
 let localRoutines: Routine[] = [];
 let localRoutineExercises: RoutineExercise[] = [];
 let localRoutineExerciseSets: RoutineExerciseSet[] = [];
+let localWorkoutSessions: WorkoutSession[] = [];
+let localSessionExercises: SessionExercise[] = [];
+let localSessionExerciseSets: SessionExerciseSet[] = [];
 let localSession: { user: { id: string; email: string } } | null = null;
 
 let nextRoutineId = 1;
 let nextRoutineExerciseId = 1;
 let nextRoutineSetId = 1;
+let nextSessionId = 1;
+let nextSessionExerciseId = 1;
+let nextSessionSetId = 1;
 
 export const localDb = {
   // Auth
@@ -194,5 +231,226 @@ export const localDb = {
       s.routine_set_id === routineSetId ? { ...s, ...updates } : s
     );
     return { error: null };
+  },
+
+  // ===== WORKOUT SESSIONS =====
+
+  // Start a new workout session (optionally from a routine)
+  startWorkoutSession: async (params: {
+    routine_id: number | null;
+    session_name: string;
+    user_id: string;
+  }) => {
+    const now = new Date();
+    const session: WorkoutSession = {
+      session_id: nextSessionId++,
+      routine_id: params.routine_id,
+      session_name: params.session_name,
+      session_date: now.toISOString().split("T")[0],
+      start_time: now.toTimeString().split(" ")[0],
+      end_time: null,
+      notes: null,
+      created_at: now.toISOString(),
+      user_id: params.user_id,
+    };
+    localWorkoutSessions.push(session);
+    return { data: session, error: null };
+  },
+
+  // Finish a workout session
+  finishWorkoutSession: async (sessionId: number, notes?: string) => {
+    const now = new Date();
+    localWorkoutSessions = localWorkoutSessions.map((s) =>
+      s.session_id === sessionId
+        ? { ...s, end_time: now.toTimeString().split(" ")[0], notes: notes ?? s.notes }
+        : s
+    );
+    return { error: null };
+  },
+
+  // Get all completed sessions for the user (history)
+  getWorkoutSessions: async (userId: string) => {
+    const data = localWorkoutSessions
+      .filter((s) => s.user_id === userId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return { data, error: null };
+  },
+
+  // Get a single session by ID
+  getWorkoutSession: async (sessionId: number) => {
+    const session = localWorkoutSessions.find((s) => s.session_id === sessionId) ?? null;
+    return { data: session, error: session ? null : { message: "Session not found" } };
+  },
+
+  // Get the active (unfinished) session
+  getActiveSession: async (userId: string) => {
+    const session = localWorkoutSessions.find(
+      (s) => s.user_id === userId && s.end_time === null
+    ) ?? null;
+    return { data: session, error: null };
+  },
+
+  // Update session notes
+  updateWorkoutSession: async (sessionId: number, updates: { notes?: string; session_name?: string }) => {
+    localWorkoutSessions = localWorkoutSessions.map((s) =>
+      s.session_id === sessionId ? { ...s, ...updates } : s
+    );
+    return { error: null };
+  },
+
+  // Delete a session and all its exercises/sets
+  deleteWorkoutSession: async (sessionId: number) => {
+    const exerciseIds = localSessionExercises
+      .filter((e) => e.session_id === sessionId)
+      .map((e) => e.session_exercise_id);
+    localSessionExerciseSets = localSessionExerciseSets.filter(
+      (s) => !exerciseIds.includes(s.session_exercise_id)
+    );
+    localSessionExercises = localSessionExercises.filter((e) => e.session_id !== sessionId);
+    localWorkoutSessions = localWorkoutSessions.filter((s) => s.session_id !== sessionId);
+    return { error: null };
+  },
+
+  // ===== SESSION EXERCISES =====
+
+  getSessionExercises: async (sessionId: number) => {
+    const data = localSessionExercises
+      .filter((e) => e.session_id === sessionId)
+      .sort((a, b) => a.exercise_order - b.exercise_order);
+    return { data, error: null };
+  },
+
+  insertSessionExercise: async (exercise: {
+    session_id: number;
+    exercise_id: string;
+    exercise_name: string;
+    exercise_order: number;
+    notes: string | null;
+  }) => {
+    const newExercise: SessionExercise = {
+      session_exercise_id: nextSessionExerciseId++,
+      ...exercise,
+    };
+    localSessionExercises.push(newExercise);
+    return { data: newExercise, error: null };
+  },
+
+  updateSessionExercise: async (sessionExerciseId: number, updates: { notes?: string }) => {
+    localSessionExercises = localSessionExercises.map((e) =>
+      e.session_exercise_id === sessionExerciseId ? { ...e, ...updates } : e
+    );
+    return { error: null };
+  },
+
+  deleteSessionExercise: async (sessionExerciseId: number) => {
+    localSessionExerciseSets = localSessionExerciseSets.filter(
+      (s) => s.session_exercise_id !== sessionExerciseId
+    );
+    localSessionExercises = localSessionExercises.filter(
+      (e) => e.session_exercise_id !== sessionExerciseId
+    );
+    return { error: null };
+  },
+
+  // ===== SESSION EXERCISE SETS =====
+
+  getSessionExerciseSets: async (sessionExerciseId: number) => {
+    const data = localSessionExerciseSets
+      .filter((s) => s.session_exercise_id === sessionExerciseId)
+      .sort((a, b) => a.set_number - b.set_number);
+    return { data, error: null };
+  },
+
+  insertSessionExerciseSet: async (set: {
+    session_exercise_id: number;
+    set_number: number;
+    weight: number | null;
+    reps: number | null;
+    is_warmup: boolean;
+    completed?: boolean;
+  }) => {
+    const newSet: SessionExerciseSet = {
+      session_set_id: nextSessionSetId++,
+      completed: false,
+      ...set,
+    };
+    localSessionExerciseSets.push(newSet);
+    return { data: newSet, error: null };
+  },
+
+  updateSessionExerciseSet: async (
+    sessionSetId: number,
+    updates: { reps?: number | null; weight?: number | null; is_warmup?: boolean; completed?: boolean }
+  ) => {
+    localSessionExerciseSets = localSessionExerciseSets.map((s) =>
+      s.session_set_id === sessionSetId ? { ...s, ...updates } : s
+    );
+    return { error: null };
+  },
+
+  deleteSessionExerciseSet: async (sessionSetId: number) => {
+    localSessionExerciseSets = localSessionExerciseSets.filter(
+      (s) => s.session_set_id !== sessionSetId
+    );
+    return { error: null };
+  },
+
+  // ===== START WORKOUT FROM ROUTINE =====
+  // Copies routine template into a live session
+  startWorkoutFromRoutine: async (routineId: number, userId: string) => {
+    const routine = localRoutines.find((r) => r.routine_id === routineId);
+    if (!routine) return { data: null, error: { message: "Routine not found" } };
+
+    // Create session
+    const now = new Date();
+    const session: WorkoutSession = {
+      session_id: nextSessionId++,
+      routine_id: routineId,
+      session_name: routine.routine_name,
+      session_date: now.toISOString().split("T")[0],
+      start_time: now.toTimeString().split(" ")[0],
+      end_time: null,
+      notes: null,
+      created_at: now.toISOString(),
+      user_id: userId,
+    };
+    localWorkoutSessions.push(session);
+
+    // Copy exercises
+    const routineExercises = localRoutineExercises
+      .filter((re) => re.routine_id === routineId)
+      .sort((a, b) => a.exercise_order - b.exercise_order);
+
+    for (const re of routineExercises) {
+      const sessionExercise: SessionExercise = {
+        session_exercise_id: nextSessionExerciseId++,
+        session_id: session.session_id,
+        exercise_id: re.exercise_id,
+        exercise_name: re.exercise_name,
+        exercise_order: re.exercise_order,
+        notes: null,
+      };
+      localSessionExercises.push(sessionExercise);
+
+      // Copy template sets
+      const templateSets = localRoutineExerciseSets
+        .filter((s) => s.routine_exercise_id === re.routine_exercise_id)
+        .sort((a, b) => a.set_number - b.set_number);
+
+      for (const ts of templateSets) {
+        const sessionSet: SessionExerciseSet = {
+          session_set_id: nextSessionSetId++,
+          session_exercise_id: sessionExercise.session_exercise_id,
+          set_number: ts.set_number,
+          weight: ts.target_weight,
+          reps: ts.target_reps,
+          is_warmup: ts.is_warmup,
+          completed: false,
+        };
+        localSessionExerciseSets.push(sessionSet);
+      }
+    }
+
+    return { data: session, error: null };
   },
 };
