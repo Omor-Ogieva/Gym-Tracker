@@ -1,26 +1,34 @@
 import { useEffect, useState } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
-import { db, isOnline } from "./backend/db";
+import { db } from "./backend/db";
+import { ThemeProvider, useTheme } from "./theme/ThemeContext";
 
-export default function RootLayout() {
+function RootNav() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const segments = useSegments();
+  const { colors } = useTheme();
 
   useEffect(() => {
-    db.getSession().then(({ data: { session } }: any) => {
-      setSession(session);
+    db.getSession().then((result: any) => {
+      setSession(result?.data?.session ?? null);
       setLoading(false);
     });
 
-    const { data: { subscription } } = db.onAuthStateChange(
+    const result = db.onAuthStateChange(
       (_event: string, session: any) => {
         setSession(session);
       }
     );
 
-    return () => subscription.unsubscribe();
+    const subscription = result?.data?.subscription;
+
+    return () => {
+      if (subscription?.unsubscribe) {
+        subscription.unsubscribe();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -29,7 +37,7 @@ export default function RootLayout() {
     const inAuthScreen = segments[0] === "auth";
 
     if (session && inAuthScreen) {
-      router.replace("/");
+      router.replace("/(tabs)");
     } else if (!session && !inAuthScreen) {
       router.replace("/auth");
     }
@@ -38,11 +46,27 @@ export default function RootLayout() {
   if (loading) return null;
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: colors.background },
+        animation: "fade",
+        animationDuration: 150,
+      }}
+    >
+      <Stack.Screen name="(tabs)" />
       <Stack.Screen name="auth" />
-      <Stack.Screen name="test" />
-      <Stack.Screen name="profile" />
+      <Stack.Screen name="workout" options={{ animation: "slide_from_right", animationDuration: 200 }} />
+      <Stack.Screen name="settings" options={{ presentation: "modal", animation: "slide_from_bottom", animationDuration: 200 }} />
+      <Stack.Screen name="index" />
     </Stack>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <RootNav />
+    </ThemeProvider>
   );
 }

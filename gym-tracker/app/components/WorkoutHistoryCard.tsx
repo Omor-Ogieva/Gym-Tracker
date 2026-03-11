@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { useTheme } from "../theme/ThemeContext";
 
 type WorkoutHistoryCardProps = {
   sessionName: string;
@@ -19,77 +20,89 @@ export default function WorkoutHistoryCard({
   totalVolume,
   notes,
 }: WorkoutHistoryCardProps) {
-  const formatDuration = () => {
-    if (!endTime) return "—";
-    const [sh, sm, ss] = startTime.split(":").map(Number);
-    const [eh, em, es] = endTime.split(":").map(Number);
-    const startSec = sh * 3600 + sm * 60 + (ss || 0);
-    const endSec = eh * 3600 + em * 60 + (es || 0);
-    const diff = Math.max(0, endSec - startSec);
-    const mins = Math.floor(diff / 60);
-    if (mins >= 60) {
-      const h = Math.floor(mins / 60);
-      const m = mins % 60;
-      return `${h}h ${m}m`;
-    }
-    return `${mins}m`;
-  };
+  const { colors } = useTheme();
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr + "T00:00:00");
-    return date.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    });
+  const formatDuration = () => {
+    if (!endTime) return "In progress";
+
+    let start: Date;
+    let end: Date;
+
+    if (startTime.includes("T") || startTime.length > 10) {
+      start = new Date(startTime);
+    } else {
+      start = new Date(`${sessionDate}T${startTime}`);
+    }
+
+    if (endTime.includes("T") || endTime.length > 10) {
+      end = new Date(endTime);
+    } else {
+      end = new Date(`${sessionDate}T${endTime}`);
+    }
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return "—";
+    }
+
+    const diffMs = end.getTime() - start.getTime();
+    if (diffMs < 0) return "—";
+
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const hrs = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+
+    if (hrs === 0 && mins === 0) return `${secs}s`;
+    if (hrs === 0) return `${mins}m ${secs}s`;
+    return `${hrs}h ${mins}m ${secs}s`;
   };
 
   return (
-    <View style={styles.card}>
-      <View style={styles.headerRow}>
-        <Text style={styles.name}>{sessionName}</Text>
-        <Text style={styles.date}>{formatDate(sessionDate)}</Text>
+    <View
+      style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={styles.header}>
+        <Text style={[styles.name, { color: colors.text }]}>{sessionName}</Text>
+        <Text
+          style={[styles.date, { color: colors.textTertiary }]}>
+          {new Date(sessionDate).toLocaleDateString()}
+        </Text>
       </View>
-
-      <View style={styles.metaRow}>
-        <View style={styles.metaItem}>
-          <Text style={styles.metaLabel}>Duration</Text>
-          <Text style={styles.metaValue}>{formatDuration()}</Text>
+      <View style={styles.statsRow}>
+        <View style={styles.statItem}>
+          <Text
+            style={[styles.statValue, { color: colors.primary }]}>{formatDuration()}</Text>
+          <Text
+            style={[styles.statLabel, { color: colors.textSecondary }]}>Duration</Text>
         </View>
-        <View style={styles.metaItem}>
-          <Text style={styles.metaLabel}>Exercises</Text>
-          <Text style={styles.metaValue}>{exerciseCount}</Text>
+        <View style={styles.statItem}>
+          <Text
+            style={[styles.statValue, { color: colors.primary }]}>{exerciseCount}</Text>
+          <Text
+            style={[styles.statLabel, { color: colors.textSecondary }]}>Exercises</Text>
         </View>
-        <View style={styles.metaItem}>
-          <Text style={styles.metaLabel}>Volume</Text>
-          <Text style={styles.metaValue}>{totalVolume.toLocaleString()} lbs</Text>
+        <View style={styles.statItem}>
+          <Text
+            style={[styles.statValue, { color: colors.primary }]}>{totalVolume.toLocaleString()}</Text>
+          <Text
+            style={[styles.statLabel, { color: colors.textSecondary }]}>Volume</Text>
         </View>
       </View>
-
-      {notes ? <Text style={styles.notes}>{notes}</Text> : null}
+      {notes ? (
+        <Text
+          style={[styles.notes, { color: colors.textSecondary }]}>{notes}</Text>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "#f9fafb",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    gap: 10,
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  name: { fontSize: 16, fontWeight: "700", color: "#1f2937", flex: 1 },
-  date: { fontSize: 13, color: "#6b7280", fontWeight: "600" },
-  metaRow: { flexDirection: "row", gap: 16 },
-  metaItem: { gap: 2 },
-  metaLabel: { fontSize: 11, fontWeight: "600", color: "#9ca3af", textTransform: "uppercase" },
-  metaValue: { fontSize: 14, fontWeight: "600", color: "#374151" },
-  notes: { fontSize: 13, color: "#6b7280", fontStyle: "italic" },
+  card: { borderRadius: 12, padding: 16, borderWidth: 1, gap: 12 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  name: { fontSize: 16, fontWeight: "700" },
+  date: { fontSize: 13 },
+  statsRow: { flexDirection: "row", justifyContent: "space-around" },
+  statItem: { alignItems: "center", gap: 2 },
+  statValue: { fontSize: 16, fontWeight: "700" },
+  statLabel: { fontSize: 11, fontWeight: "600" },
+  notes: { fontSize: 13, fontStyle: "italic" },
 });

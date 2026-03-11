@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { useTheme } from "../theme/ThemeContext";
 import WorkoutHistoryCard from "./WorkoutHistoryCard";
 
 type SessionWithMeta = {
@@ -17,13 +18,19 @@ type WorkoutHistoryListProps = {
 };
 
 export default function WorkoutHistoryList({ sessions }: WorkoutHistoryListProps) {
+  const { colors } = useTheme();
+
   if (sessions.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyIcon}>🏋️</Text>
-        <Text style={styles.emptyTitle}>No workouts yet</Text>
-        <Text style={styles.emptySubtitle}>
-          Complete your first workout to see it here!
+        <Text style={styles.emptyIcon}>📋</Text>
+        <Text
+          style={[styles.emptyTitle, { color: colors.textSecondary }]}>
+          No workouts yet
+        </Text>
+        <Text
+          style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
+          Complete your first workout to see it here
         </Text>
       </View>
     );
@@ -31,7 +38,9 @@ export default function WorkoutHistoryList({ sessions }: WorkoutHistoryListProps
 
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>Workout History</Text>
+      <Text
+        style={[styles.sectionTitle, { color: colors.text }]}
+        >Workout History</Text>
       <View style={styles.list}>
         {sessions.map((session) => (
           <WorkoutHistoryCard
@@ -52,10 +61,10 @@ export default function WorkoutHistoryList({ sessions }: WorkoutHistoryListProps
 
 const styles = StyleSheet.create({
   container: { gap: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#1f2937" },
+  sectionTitle: { fontSize: 18, fontWeight: "700" },
   list: { gap: 12 },
   emptyContainer: { alignItems: "center", paddingVertical: 40, gap: 8 },
   emptyIcon: { fontSize: 48 },
-  emptyTitle: { fontSize: 18, fontWeight: "700", color: "#6b7280" },
-  emptySubtitle: { fontSize: 14, color: "#9ca3af", textAlign: "center" },
+  emptyTitle: { fontSize: 18, fontWeight: "700" },
+  emptySubtitle: { fontSize: 14, textAlign: "center" },
 });

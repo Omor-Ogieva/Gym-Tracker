@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { useTheme } from "../theme/ThemeContext";
 
 type ProfileStatsProps = {
   totalWorkouts: number;
@@ -7,21 +8,23 @@ type ProfileStatsProps = {
 };
 
 export default function ProfileStats({ totalWorkouts, totalVolume, totalExercises }: ProfileStatsProps) {
+  const { colors } = useTheme();
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <View style={styles.stat}>
-        <Text style={styles.statValue}>{totalWorkouts}</Text>
-        <Text style={styles.statLabel}>Workouts</Text>
+        <Text style={[styles.statValue, { color: colors.text }]}>{totalWorkouts}</Text>
+        <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Workouts</Text>
       </View>
-      <View style={styles.divider} />
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
       <View style={styles.stat}>
-        <Text style={styles.statValue}>{totalVolume.toLocaleString()}</Text>
-        <Text style={styles.statLabel}>Total lbs</Text>
+        <Text style={[styles.statValue, { color: colors.text }]}>{totalVolume.toLocaleString()}</Text>
+        <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Volume (lbs)</Text>
       </View>
-      <View style={styles.divider} />
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
       <View style={styles.stat}>
-        <Text style={styles.statValue}>{totalExercises}</Text>
-        <Text style={styles.statLabel}>Exercises</Text>
+        <Text style={[styles.statValue, { color: colors.text }]}>{totalExercises}</Text>
+        <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Exercises</Text>
       </View>
     </View>
   );
@@ -29,15 +32,11 @@ export default function ProfileStats({ totalWorkouts, totalVolume, totalExercise
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: "row",
-    backgroundColor: "#f9fafb",
-    borderRadius: 12,
-    paddingVertical: 16,
+    flexDirection: "row", borderRadius: 12, paddingVertical: 16,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
   },
   stat: { flex: 1, alignItems: "center", gap: 2 },
-  statValue: { fontSize: 20, fontWeight: "700", color: "#1f2937" },
-  statLabel: { fontSize: 12, fontWeight: "600", color: "#6b7280" },
-  divider: { width: 1, backgroundColor: "#e5e7eb" },
+  statValue: { fontSize: 20, fontWeight: "700" },
+  statLabel: { fontSize: 12, fontWeight: "600" },
+  divider: { width: 1 },
 });
