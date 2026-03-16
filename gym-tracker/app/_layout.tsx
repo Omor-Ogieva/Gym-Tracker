@@ -50,14 +50,14 @@ function RootNav() {
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: colors.background },
-        animation: "fade",
-        animationDuration: 150,
+        animation: "none",
       }}
     >
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="auth" />
-      <Stack.Screen name="workout" options={{ animation: "slide_from_right", animationDuration: 200 }} />
-      <Stack.Screen name="settings" options={{ presentation: "modal", animation: "slide_from_bottom", animationDuration: 200 }} />
+      <Stack.Screen name="workout" options={{ animation: "slide_from_bottom", animationDuration: 280 }} />
+      <Stack.Screen name="settings" options={{ presentation: "modal", animation: "slide_from_bottom", animationDuration: 280 }} />
+      <Stack.Screen name="exercise-detail/[exerciseId]" options={{ animation: "slide_from_right", animationDuration: 280 }} />
       <Stack.Screen name="index" />
     </Stack>
   );

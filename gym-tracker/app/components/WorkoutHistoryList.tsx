@@ -1,8 +1,9 @@
-import { StyleSheet, Text, View } from "react-native";
+import { memo } from "react";
+import { Text, View } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import WorkoutHistoryCard from "./WorkoutHistoryCard";
 
-type SessionWithMeta = {
+export type SessionWithMeta = {
   session_id: number;
   session_name: string;
   session_date: string;
@@ -11,25 +12,18 @@ type SessionWithMeta = {
   notes: string | null;
   exerciseCount: number;
   totalVolume: number;
+  exerciseNames: string[];
 };
 
-type WorkoutHistoryListProps = {
-  sessions: SessionWithMeta[];
-};
-
-export default function WorkoutHistoryList({ sessions }: WorkoutHistoryListProps) {
+const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions }: { sessions: SessionWithMeta[] }) {
   const { colors } = useTheme();
 
   if (sessions.length === 0) {
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyIcon}>📋</Text>
-        <Text
-          style={[styles.emptyTitle, { color: colors.textSecondary }]}>
-          No workouts yet
-        </Text>
-        <Text
-          style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
+      <View style={{ alignItems: "center", paddingVertical: 48, gap: 10 }}>
+        <Text style={{ fontSize: 48 }}>🏋️</Text>
+        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.textSecondary }}>No workouts yet</Text>
+        <Text style={{ fontSize: 14, color: colors.textTertiary, textAlign: "center" }}>
           Complete your first workout to see it here
         </Text>
       </View>
@@ -37,34 +31,23 @@ export default function WorkoutHistoryList({ sessions }: WorkoutHistoryListProps
   }
 
   return (
-    <View style={styles.container}>
-      <Text
-        style={[styles.sectionTitle, { color: colors.text }]}
-        >Workout History</Text>
-      <View style={styles.list}>
-        {sessions.map((session) => (
-          <WorkoutHistoryCard
-            key={session.session_id}
-            sessionName={session.session_name}
-            sessionDate={session.session_date}
-            startTime={session.start_time}
-            endTime={session.end_time}
-            exerciseCount={session.exerciseCount}
-            totalVolume={session.totalVolume}
-            notes={session.notes}
-          />
-        ))}
-      </View>
+    <View style={{ gap: 12 }}>
+      <Text style={{ fontSize: 18, fontWeight: "700", color: colors.text, marginBottom: 4 }}>Workout History</Text>
+      {sessions.map((session) => (
+        <WorkoutHistoryCard
+          key={session.session_id}
+          sessionName={session.session_name}
+          sessionDate={session.session_date}
+          startTime={session.start_time}
+          endTime={session.end_time}
+          exerciseCount={session.exerciseCount}
+          totalVolume={session.totalVolume}
+          notes={session.notes}
+          exerciseNames={session.exerciseNames}
+        />
+      ))}
     </View>
   );
-}
-
-const styles = StyleSheet.create({
-  container: { gap: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: "700" },
-  list: { gap: 12 },
-  emptyContainer: { alignItems: "center", paddingVertical: 40, gap: 8 },
-  emptyIcon: { fontSize: 48 },
-  emptyTitle: { fontSize: 18, fontWeight: "700" },
-  emptySubtitle: { fontSize: 14, textAlign: "center" },
 });
+
+export default WorkoutHistoryList;

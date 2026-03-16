@@ -72,6 +72,28 @@ let localSessionExercises: SessionExercise[] = [];
 let localSessionExerciseSets: SessionExerciseSet[] = [];
 let localSession: { user: { id: string; email: string } } | null = null;
 
+type PersonalRecord = {
+  pr_id: number;
+  user_id: string;
+  exercise_id: string;
+  max_weight: number | null;
+  max_volume: number | null;
+  achieved_at: string;
+};
+
+type CustomExercise = {
+  exercise_id: string;
+  user_id: string;
+  name: string;
+  primary_muscle: string | null;
+  equipment: string | null;
+  created_at: string;
+};
+
+let localPersonalRecords: PersonalRecord[] = [];
+let localCustomExercises: CustomExercise[] = [];
+let nextPrId = 1;
+
 let nextRoutineId = 1;
 let nextRoutineExerciseId = 1;
 let nextRoutineSetId = 1;
@@ -118,6 +140,17 @@ export const localDb = {
   getUserProfile: async (userId: string) => {
     const user = localUsers.find((u) => u.user_id === userId) ?? null;
     return { data: user, error: user ? null : { message: "User not found" } };
+  },
+
+  updateUserProfile: async (userId: string, updates: { username: string }) => {
+    const user = localUsers.find((u) => u.user_id === userId);
+    if (!user) return { data: null, error: { message: "User not found" } };
+    Object.assign(user, updates);
+    return { data: user, error: null };
+  },
+
+  changePassword: async (_newPassword: string) => {
+    return { data: null, error: { message: "Password changes require an internet connection." } };
   },
 
   onAuthStateChange: (callback: (event: string, session: any) => void) => {
@@ -457,5 +490,97 @@ export const localDb = {
     }
 
     return { data: session, error: null };
+  },
+
+  // Previous performance hints
+  getPreviousSessionSets: async (exerciseId: string, userId: string, excludeSessionId: number) => {
+    const prevSession = localWorkoutSessions
+      .filter((s) => s.user_id === userId && s.end_time !== null && s.session_id !== excludeSessionId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+    if (!prevSession) return { data: [], error: null };
+    const prevEx = localSessionExercises.find(
+      (e) => e.session_id === prevSession.session_id && e.exercise_id === exerciseId
+    );
+    if (!prevEx) return { data: [], error: null };
+    const data = localSessionExerciseSets
+      .filter((s) => s.session_exercise_id === prevEx.session_exercise_id)
+      .sort((a, b) => a.set_number - b.set_number);
+    return { data, error: null };
+  },
+
+  // Personal Records
+  getPersonalRecords: async (userId: string) => {
+    const data = localPersonalRecords.filter((r) => r.user_id === userId);
+    return { data, error: null };
+  },
+
+  upsertPersonalRecord: async (record: {
+    user_id: string;
+    exercise_id: string;
+    max_weight: number | null;
+    max_volume: number | null;
+  }) => {
+    const existing = localPersonalRecords.findIndex(
+      (r) => r.user_id === record.user_id && r.exercise_id === record.exercise_id
+    );
+    if (existing >= 0) {
+      localPersonalRecords[existing] = {
+        ...localPersonalRecords[existing],
+        max_weight: record.max_weight,
+        max_volume: record.max_volume,
+        achieved_at: new Date().toISOString(),
+      };
+    } else {
+      localPersonalRecords.push({
+        pr_id: nextPrId++,
+        ...record,
+        achieved_at: new Date().toISOString(),
+      });
+    }
+    return { error: null };
+  },
+
+  // Custom Exercises
+  getCustomExercises: async (userId: string) => {
+    const data = localCustomExercises.filter((e) => e.user_id === userId);
+    return { data, error: null };
+  },
+
+  insertCustomExercise: async (exercise: {
+    exercise_id: string;
+    user_id: string;
+    name: string;
+    primary_muscle: string | null;
+    equipment: string | null;
+  }) => {
+    localCustomExercises.push({ ...exercise, created_at: new Date().toISOString() });
+    return { error: null };
+  },
+
+  deleteCustomExercise: async (exerciseId: string) => {
+    localCustomExercises = localCustomExercises.filter((e) => e.exercise_id !== exerciseId);
+    return { error: null };
+  },
+
+  // Exercise history for progression charts
+  getExerciseHistory: async (exerciseId: string, userId: string) => {
+    const completedSessions = localWorkoutSessions
+      .filter((s) => s.user_id === userId && s.end_time !== null)
+      .sort((a, b) => new Date(a.session_date).getTime() - new Date(b.session_date).getTime());
+
+    const history = completedSessions
+      .map((s) => {
+        const se = localSessionExercises.find(
+          (e) => e.session_id === s.session_id && e.exercise_id === exerciseId
+        );
+        if (!se) return null;
+        const sets = localSessionExerciseSets.filter(
+          (set) => set.session_exercise_id === se.session_exercise_id && set.completed
+        );
+        return { session_date: s.session_date, sets };
+      })
+      .filter(Boolean);
+
+    return { data: history, error: null };
   },
 };

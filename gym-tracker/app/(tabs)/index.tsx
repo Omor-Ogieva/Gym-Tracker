@@ -1,18 +1,20 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable,
+  ScrollView, StyleSheet, Text, TextInput, View,
+} from "react-native";
 import { useRouter } from "expo-router";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { db, isOnline } from "../backend/db";
 import { useTheme } from "../theme/ThemeContext";
 import { useGuardedPress } from "../utils/pressGuard";
-import exercisesData from "../../assets/data/exercises.json";
+import ExercisePicker from "../components/ExercisePicker";
 
 export default function WorkoutsScreen() {
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
   const { colors } = useTheme();
 
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [users, setUsers] = useState<any[]>([]);
   const [loadingRoutines, setLoadingRoutines] = useState(false);
   const [routines, setRoutines] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -21,7 +23,6 @@ export default function WorkoutsScreen() {
   const [selectedRoutineId, setSelectedRoutineId] = useState<number | null>(null);
   const [routineExercises, setRoutineExercises] = useState<any[]>([]);
   const [loadingExercises, setLoadingExercises] = useState(false);
-  const [exerciseSearch, setExerciseSearch] = useState("");
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedExerciseId, setExpandedExerciseId] = useState<number | null>(null);
@@ -32,21 +33,6 @@ export default function WorkoutsScreen() {
   const [editWeight, setEditWeight] = useState("");
   const [editWarmup, setEditWarmup] = useState(false);
   const [startingWorkout, setStartingWorkout] = useState(false);
-
-  const filteredExercises = exerciseSearch.length === 0
-    ? []
-    : exercisesData.filter(
-        (ex) => ex.name && ex.name.toLowerCase().includes(exerciseSearch.toLowerCase())
-      );
-
-  const loadUsers = async () => {
-    setLoadingUsers(true);
-    setError(null);
-    const { data, error } = await db.getUsers();
-    if (error) setError(error.message);
-    else setUsers(data ?? []);
-    setLoadingUsers(false);
-  };
 
   const loadRoutines = async () => {
     setLoadingRoutines(true);
@@ -63,7 +49,8 @@ export default function WorkoutsScreen() {
     const { data: { user } } = await db.getUser();
     if (!user) { setError("Not authenticated"); return; }
     const { error } = await db.insertRoutine({ routine_name: routineName, description: description || null, user_id: user.id });
-    if (error) { setError(error.message); } else { setRoutineName(""); setDescription(""); setShowForm(false); loadRoutines(); }
+    if (error) { setError(error.message); }
+    else { setRoutineName(""); setDescription(""); setShowForm(false); loadRoutines(); }
   });
 
   const deleteRoutine = async (routineId: number) => {
@@ -71,34 +58,26 @@ export default function WorkoutsScreen() {
     const { error } = await db.deleteRoutine(routineId);
     if (error) setError(error.message);
     else {
-      if (selectedRoutineId === routineId) { setSelectedRoutineId(null); setRoutineExercises([]); setExpandedExerciseId(null); setExerciseSets([]); }
+      if (selectedRoutineId === routineId) {
+        setSelectedRoutineId(null); setRoutineExercises([]);
+        setExpandedExerciseId(null); setExerciseSets([]);
+      }
       loadRoutines();
     }
   };
 
-  const handleLongPressRoutine = useCallback((routineId: number, routineName: string) => {
-    Alert.alert(
-      routineName,
-      "What would you like to do?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete Routine",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Delete Routine",
-              `Are you sure you want to delete "${routineName}"? This cannot be undone.`,
-              [
-                { text: "Cancel", style: "cancel" },
-                { text: "Delete", style: "destructive", onPress: () => deleteRoutine(routineId) },
-              ]
-            );
-          },
-        },
-      ]
-    );
-  }, [selectedRoutineId]);
+  const handleLongPressRoutine = (routineId: number, routineName: string) => {
+    Alert.alert(routineName, "What would you like to do?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete Routine", style: "destructive",
+        onPress: () => Alert.alert("Delete Routine", `Are you sure you want to delete "${routineName}"?`, [
+          { text: "Cancel", style: "cancel" },
+          { text: "Delete", style: "destructive", onPress: () => deleteRoutine(routineId) },
+        ]),
+      },
+    ]);
+  };
 
   const loadRoutineExercises = async (routineId: number) => {
     setLoadingExercises(true); setError(null);
@@ -110,19 +89,26 @@ export default function WorkoutsScreen() {
   const addExerciseToRoutine = useGuardedPress(async (exercise: any) => {
     if (!selectedRoutineId) return; setError(null);
     const { error } = await db.insertRoutineExercise({ routine_id: selectedRoutineId, exercise_id: exercise.id, exercise_name: exercise.name, exercise_order: routineExercises.length + 1 });
-    if (error) { setError(error.message); } else { setShowExercisePicker(false); setExerciseSearch(""); loadRoutineExercises(selectedRoutineId); }
+    if (error) { setError(error.message); }
+    else { setShowExercisePicker(false); loadRoutineExercises(selectedRoutineId); }
   });
 
   const removeExerciseFromRoutine = useGuardedPress(async (routineExerciseId: number) => {
     if (!selectedRoutineId) return; setError(null);
     const { error } = await db.deleteRoutineExercise(routineExerciseId);
     if (error) setError(error.message);
-    else { if (expandedExerciseId === routineExerciseId) { setExpandedExerciseId(null); setExerciseSets([]); } loadRoutineExercises(selectedRoutineId); }
+    else {
+      if (expandedExerciseId === routineExerciseId) { setExpandedExerciseId(null); setExerciseSets([]); }
+      loadRoutineExercises(selectedRoutineId);
+    }
   });
 
   const selectRoutine = useCallback((routineId: number) => {
-    if (selectedRoutineId === routineId) { setSelectedRoutineId(null); setRoutineExercises([]); setExpandedExerciseId(null); setExerciseSets([]); setShowExercisePicker(false); }
-    else { setSelectedRoutineId(routineId); loadRoutineExercises(routineId); setExpandedExerciseId(null); setExerciseSets([]); setShowExercisePicker(false); }
+    if (selectedRoutineId === routineId) {
+      setSelectedRoutineId(null); setRoutineExercises([]); setExpandedExerciseId(null); setExerciseSets([]); setShowExercisePicker(false);
+    } else {
+      setSelectedRoutineId(routineId); loadRoutineExercises(routineId); setExpandedExerciseId(null); setExerciseSets([]); setShowExercisePicker(false);
+    }
   }, [selectedRoutineId]);
 
   const loadSets = async (routineExerciseId: number) => {
@@ -176,255 +162,372 @@ export default function WorkoutsScreen() {
     router.push({ pathname: "/workout", params: { sessionId: String(session.session_id) } });
   }, 1000);
 
-  useEffect(() => { loadUsers(); loadRoutines(); }, []);
-
-  const themed = {
-    container: { flex: 1 as const, padding: 16, paddingTop: 60, backgroundColor: colors.background },
-    title: { fontSize: 24, fontWeight: "700" as const, marginBottom: 12, color: colors.text },
-    offlineText: { textAlign: "center" as const, color: colors.warning, fontWeight: "600" as const, marginBottom: 8 },
-    errorText: { color: colors.danger, marginBottom: 8 },
-    sectionHeader: { flexDirection: "row" as const, justifyContent: "space-between" as const, alignItems: "center" as const, marginTop: 12 },
-    sectionTitle: { fontSize: 18, fontWeight: "600" as const, color: colors.text },
-    subTitle: { fontSize: 16, fontWeight: "600" as const, color: colors.text },
-    form: { gap: 8, marginTop: 8 },
-    input: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, fontSize: 16, backgroundColor: colors.inputBackground, color: colors.text },
-    insertButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: colors.successLight },
-    cancelButton: { backgroundColor: colors.dangerLight },
-    submitButton: { alignSelf: "flex-start" as const, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: colors.primary },
-    submitText: { color: "#fff", fontWeight: "600" as const },
-    deleteButton: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: colors.dangerLight },
-    deleteText: { fontWeight: "600" as const, color: colors.danger },
-    buttonText: { fontWeight: "600" as const, color: colors.text },
-    routineCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginTop: 12, borderWidth: 1, borderColor: colors.border },
-    routineCardSelected: { borderColor: colors.primary, borderWidth: 2 },
-    routineTopRow: { flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "space-between" as const },
-    routineName: { fontSize: 16, fontWeight: "700" as const, color: colors.text },
-    routineDesc: { fontSize: 14, color: colors.textSecondary, marginTop: 4 },
-    routineDate: { fontSize: 12, color: colors.textTertiary, marginTop: 4 },
-    startWorkoutButton: { backgroundColor: colors.primary, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 },
-    startWorkoutButtonDisabled: { opacity: 0.5 },
-    startWorkoutText: { color: "#fff", fontWeight: "700" as const, fontSize: 14 },
-    longPressHint: { fontSize: 11, color: colors.textTertiary, marginTop: 6, textAlign: "center" as const },
-    exercisesSection: { marginLeft: 12, marginTop: 8, marginBottom: 12, paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: colors.primary },
-    exerciseItem: { flexDirection: "row" as const, alignItems: "center" as const, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
-    expandedExercise: { backgroundColor: colors.successLight, borderRadius: 8, paddingHorizontal: 8 },
-    exerciseOrder: { fontSize: 12, color: colors.textTertiary, fontWeight: "600" as const },
-    exerciseName: { fontSize: 15, fontWeight: "600" as const, color: colors.text },
-    tapHint: { fontSize: 11, color: colors.textTertiary, marginTop: 2 },
-    pickerContainer: { marginTop: 8, gap: 8 },
-    pickerList: { maxHeight: 300, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface },
-    pickerItem: { flexDirection: "row" as const, alignItems: "center" as const, paddingVertical: 8, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
-    pickerName: { fontSize: 14, fontWeight: "600" as const, color: colors.text },
-    pickerMeta: { fontSize: 12, color: colors.textSecondary },
-    addText: { color: colors.primary, fontWeight: "600" as const, fontSize: 14 },
-    emptyText: { textAlign: "center" as const, color: colors.textTertiary, marginTop: 12, paddingVertical: 8 },
-    setsSection: { marginLeft: 16, marginTop: 4, marginBottom: 8, paddingLeft: 12, paddingVertical: 8, borderLeftWidth: 2, borderLeftColor: colors.success, backgroundColor: colors.surfaceSecondary, borderRadius: 8 },
-    setsTitle: { fontSize: 14, fontWeight: "700" as const, marginBottom: 8, color: colors.text },
-    setHeader: { flexDirection: "row" as const, alignItems: "center" as const, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: colors.border, marginBottom: 4 },
-    setHeaderText: { fontSize: 12, fontWeight: "700" as const, color: colors.textSecondary, textAlign: "center" as const },
-    setRow: { flexDirection: "row" as const, alignItems: "center" as const, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.borderLight, gap: 4 },
-    setNumber: { fontSize: 13, fontWeight: "600" as const, color: colors.textSecondary, textAlign: "center" as const },
-    setValue: { fontSize: 14, textAlign: "center" as const, color: colors.text },
-    setInput: { borderWidth: 1, borderColor: colors.border, borderRadius: 6, padding: 6, fontSize: 14, textAlign: "center" as const, marginHorizontal: 2, backgroundColor: colors.inputBackground, color: colors.text },
-    warmupToggle: { alignItems: "center" as const, justifyContent: "center" as const, paddingVertical: 4, borderRadius: 6, backgroundColor: colors.surfaceSecondary },
-    warmupActive: { backgroundColor: colors.warning },
-    warmupText: { fontSize: 13, fontWeight: "700" as const, color: colors.text },
-    warmupBadge: { fontSize: 12, fontWeight: "700" as const, color: "#92400e", backgroundColor: colors.warningLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, overflow: "hidden" as const },
-    editSetButton: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: colors.surfaceSecondary },
-    editSetText: { fontSize: 14, fontWeight: "600" as const, color: colors.text },
-    saveSetButton: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: colors.successLight },
-    saveSetText: { fontSize: 14, fontWeight: "700" as const, color: colors.success },
-    cancelSetButton: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: colors.dangerLight },
-    deleteSetButton: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: colors.dangerLight },
-    addSetButton: { marginTop: 8, paddingVertical: 8, borderRadius: 6, backgroundColor: colors.primary, alignItems: "center" as const },
-    addSetText: { color: "#fff", fontWeight: "600" as const, fontSize: 14 },
-  };
+  useEffect(() => { loadRoutines(); }, []);
 
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
     >
       <ScrollView
         ref={scrollRef}
-        style={themed.container}
+        style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={{ paddingBottom: 100 }}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <Text style={themed.title}>Workouts</Text>
-        {!isOnline && <Text style={themed.offlineText}>⚡ Offline Mode (in-memory)</Text>}
-        {error ? <Text style={themed.errorText}>{error}</Text> : null}
-
-        <View style={themed.sectionHeader}>
-          <Text style={themed.sectionTitle}>Routines</Text>
-          <Pressable
-            style={[themed.insertButton, showForm && themed.cancelButton]}
-            onPress={() => { setShowForm(!showForm); setRoutineName(""); setDescription(""); }}
-          >
-            <Text style={themed.buttonText}>{showForm ? "Cancel" : "Create Routine"}</Text>
-          </Pressable>
+        {/* ── Page title ── */}
+        <View style={[styles.pageHeader, { borderBottomColor: colors.border }]}>
+          <Text style={[styles.pageTitle, { color: colors.text }]}>Workout</Text>
+          {!isOnline && (
+            <View style={[styles.offlineBadge, { backgroundColor: colors.warningLight }]}>
+              <Text style={[styles.offlineText, { color: colors.warning }]}>Offline</Text>
+            </View>
+          )}
         </View>
 
-        {showForm && (
-          <View style={themed.form}>
-            <TextInput style={themed.input} placeholder="Routine Name" placeholderTextColor={colors.textTertiary} value={routineName} onChangeText={setRoutineName} onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)} />
-            <TextInput style={themed.input} placeholder="Description (optional)" placeholderTextColor={colors.textTertiary} value={description} onChangeText={setDescription} onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)} />
-            <Pressable style={themed.submitButton} onPress={insertRoutine}>
-              <Text style={themed.submitText}>Save Routine</Text>
-            </Pressable>
+        {error && (
+          <View style={[styles.errorBanner, { backgroundColor: colors.dangerLight }]}>
+            <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
           </View>
         )}
 
-        {loadingRoutines ? (
-          <ActivityIndicator style={{ marginTop: 16 }} color={colors.primary} />
-        ) : (
-          routines.map((item, index) => (
-            <View key={String(item.routine_id ?? index)}>
-              <Pressable
-                onPress={() => selectRoutine(item.routine_id)}
-                onLongPress={() => handleLongPressRoutine(item.routine_id, item.routine_name)}
-                delayLongPress={500}
-                style={({ pressed }) => [
-                  themed.routineCard,
-                  selectedRoutineId === item.routine_id && themed.routineCardSelected,
-                  pressed && { opacity: 0.85 },
-                ]}
-              >
-                <View style={themed.routineTopRow}>
-                  <View style={{ flex: 1, marginRight: 12 }}>
-                    <Text style={themed.routineName}>{item.routine_name}</Text>
-                    {item.description ? <Text style={themed.routineDesc}>{item.description}</Text> : null}
-                    <Text style={themed.routineDate}>Created: {new Date(item.created_at).toLocaleDateString()}</Text>
-                  </View>
-                  <Pressable
-                    style={[themed.startWorkoutButton, startingWorkout && themed.startWorkoutButtonDisabled]}
-                    disabled={startingWorkout}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      handleStartWorkout(item.routine_id);
-                    }}
-                  >
-                    <Text style={themed.startWorkoutText}>{startingWorkout ? "..." : "▶ Start"}</Text>
-                  </Pressable>
-                </View>
-                <Text style={themed.longPressHint}>Hold to delete</Text>
+        {/* ── Routines section ── */}
+        <View style={styles.sectionRow}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Routines</Text>
+          <Pressable
+            style={[styles.createBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => { setShowForm(!showForm); setRoutineName(""); setDescription(""); }}
+          >
+            <Ionicons name={showForm ? "close" : "add"} size={20} color={colors.primary} />
+          </Pressable>
+        </View>
+
+        {/* Create routine form */}
+        {showForm && (
+          <View style={[styles.formCard, { backgroundColor: colors.surface }]}>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
+              placeholder="Routine name"
+              placeholderTextColor={colors.textTertiary}
+              value={routineName}
+              onChangeText={setRoutineName}
+              onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)}
+            />
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
+              placeholder="Description (optional)"
+              placeholderTextColor={colors.textTertiary}
+              value={description}
+              onChangeText={setDescription}
+              onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)}
+            />
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Pressable style={[styles.formCancelBtn, { backgroundColor: colors.surfaceSecondary }]} onPress={() => setShowForm(false)}>
+                <Text style={[styles.formCancelText, { color: colors.textSecondary }]}>Cancel</Text>
               </Pressable>
-
-              {selectedRoutineId === item.routine_id && (
-                <View style={[themed.exercisesSection, { marginTop: 8, marginLeft: 0, paddingLeft: 16, paddingRight: 4 }]}>
-                  <View style={themed.sectionHeader}>
-                    <Text style={themed.subTitle}>Exercises</Text>
-                    <Pressable
-                      style={[themed.insertButton, showExercisePicker && themed.cancelButton]}
-                      onPress={() => { setShowExercisePicker(!showExercisePicker); setExerciseSearch(""); }}
-                    >
-                      <Text style={themed.buttonText}>{showExercisePicker ? "Cancel" : "Add Exercise"}</Text>
-                    </Pressable>
-                  </View>
-
-                  {showExercisePicker && (
-                    <View style={themed.pickerContainer}>
-                      <TextInput style={themed.input} placeholder="Type to search exercises..." placeholderTextColor={colors.textTertiary} value={exerciseSearch} onChangeText={setExerciseSearch} autoCapitalize="none" onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)} />
-                      {exerciseSearch.length > 0 && (
-                        <ScrollView style={themed.pickerList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                          {filteredExercises.slice(0, 30).map((ex) => (
-                            <Pressable key={ex.id} style={themed.pickerItem} onPress={() => addExerciseToRoutine(ex)}>
-                              <View style={{ flex: 1 }}>
-                                <Text style={themed.pickerName}>{ex.name}</Text>
-                                <Text style={themed.pickerMeta}>{ex.primaryMuscles?.join(", ")} • {ex.equipment ?? "none"}</Text>
-                              </View>
-                              <Text style={themed.addText}>+ Add</Text>
-                            </Pressable>
-                          ))}
-                          {filteredExercises.length > 30 && <Text style={themed.emptyText}>Showing 30 of {filteredExercises.length} — refine your search</Text>}
-                          {filteredExercises.length === 0 && <Text style={themed.emptyText}>No exercises found</Text>}
-                        </ScrollView>
-                      )}
-                    </View>
-                  )}
-
-                  {loadingExercises ? (
-                    <ActivityIndicator color={colors.primary} />
-                  ) : routineExercises.length === 0 ? (
-                    <Text style={themed.emptyText}>No exercises added yet</Text>
-                  ) : (
-                    routineExercises.map((ex, i) => (
-                      <View key={String(ex.routine_exercise_id ?? i)}>
-                        <Pressable
-                          style={[themed.exerciseItem, expandedExerciseId === ex.routine_exercise_id && themed.expandedExercise]}
-                          onPress={() => toggleExerciseSets(ex.routine_exercise_id)}
-                        >
-                          <View style={{ flex: 1 }}>
-                            <Text style={themed.exerciseOrder}>#{ex.exercise_order}</Text>
-                            <Text style={themed.exerciseName}>{ex.exercise_name}</Text>
-                            <Text style={themed.tapHint}>{expandedExerciseId === ex.routine_exercise_id ? "▼ Tap to collapse" : "▶ Tap to manage sets"}</Text>
-                          </View>
-                          <Pressable style={themed.deleteButton} onPress={() => removeExerciseFromRoutine(ex.routine_exercise_id)}>
-                            <Text style={themed.deleteText}>Remove</Text>
-                          </Pressable>
-                        </Pressable>
-
-                        {expandedExerciseId === ex.routine_exercise_id && (
-                          <View style={themed.setsSection}>
-                            <Text style={themed.setsTitle}>Template Sets</Text>
-                            {loadingSets ? <ActivityIndicator color={colors.primary} /> : (
-                              <>
-                                {exerciseSets.length > 0 && (
-                                  <View style={themed.setHeader}>
-                                    <Text style={[themed.setHeaderText, { width: 36 }]}>Set</Text>
-                                    <Text style={[themed.setHeaderText, { flex: 1 }]}>Reps</Text>
-                                    <Text style={[themed.setHeaderText, { flex: 1 }]}>Weight</Text>
-                                    <Text style={[themed.setHeaderText, { width: 52 }]}>Warm</Text>
-                                    <Text style={[themed.setHeaderText, { width: 70 }]}></Text>
-                                  </View>
-                                )}
-                                {exerciseSets.map((set) => (
-                                  <View key={String(set.routine_set_id)} style={themed.setRow}>
-                                    {editingSetId === set.routine_set_id ? (
-                                      <>
-                                        <Text style={[themed.setNumber, { width: 36 }]}>#{set.set_number}</Text>
-                                        <TextInput style={[themed.setInput, { flex: 1 }]} placeholder="Reps" placeholderTextColor={colors.textTertiary} value={editReps} onChangeText={setEditReps} keyboardType="numeric" onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)} />
-                                        <TextInput style={[themed.setInput, { flex: 1 }]} placeholder="lbs" placeholderTextColor={colors.textTertiary} value={editWeight} onChangeText={setEditWeight} keyboardType="numeric" onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)} />
-                                        <Pressable style={[themed.warmupToggle, editWarmup && themed.warmupActive, { width: 52 }]} onPress={() => setEditWarmup(!editWarmup)}>
-                                          <Text style={themed.warmupText}>{editWarmup ? "W" : "—"}</Text>
-                                        </Pressable>
-                                        <View style={[{ flexDirection: "row", gap: 4, justifyContent: "flex-end" }, { width: 70 }]}>
-                                          <Pressable style={themed.saveSetButton} onPress={saveEditSet}><Text style={themed.saveSetText}>✓</Text></Pressable>
-                                          <Pressable style={themed.cancelSetButton} onPress={() => setEditingSetId(null)}><Text style={themed.deleteText}>✕</Text></Pressable>
-                                        </View>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Text style={[themed.setNumber, { width: 36 }]}>#{set.set_number}</Text>
-                                        <Text style={[themed.setValue, { flex: 1 }]}>{set.target_reps ?? "—"} reps</Text>
-                                        <Text style={[themed.setValue, { flex: 1 }]}>{set.target_weight ?? "—"} lbs</Text>
-                                        <View style={{ width: 52, alignItems: "center" }}>{set.is_warmup && <Text style={themed.warmupBadge}>W</Text>}</View>
-                                        <View style={{ flexDirection: "row", gap: 4, justifyContent: "flex-end", width: 70 }}>
-                                          <Pressable style={themed.editSetButton} onPress={() => startEditSet(set)}><Text style={themed.editSetText}>✎</Text></Pressable>
-                                          <Pressable style={themed.deleteSetButton} onPress={() => deleteSet(set.routine_set_id)}><Text style={themed.deleteText}>✕</Text></Pressable>
-                                        </View>
-                                      </>
-                                    )}
-                                  </View>
-                                ))}
-                                {exerciseSets.length === 0 && <Text style={themed.emptyText}>No sets yet</Text>}
-                                <Pressable style={themed.addSetButton} onPress={addSet}><Text style={themed.addSetText}>+ Add Set</Text></Pressable>
-                              </>
-                            )}
-                          </View>
-                        )}
-                      </View>
-                    ))
-                  )}
-                </View>
-              )}
+              <Pressable style={[styles.formSaveBtn, { backgroundColor: colors.primary }]} onPress={insertRoutine}>
+                <Text style={styles.formSaveText}>Save Routine</Text>
+              </Pressable>
             </View>
-          ))
+          </View>
         )}
 
-        {!loadingRoutines && routines.length === 0 && <Text style={themed.emptyText}>No routines found</Text>}
+        {/* Routine list */}
+        {loadingRoutines ? (
+          <ActivityIndicator style={{ marginTop: 32 }} color={colors.primary} />
+        ) : routines.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="barbell-outline" size={36} color={colors.textTertiary} />
+            <Text style={[styles.emptyText, { color: colors.textTertiary }]}>No routines yet</Text>
+            <Text style={[styles.emptySubText, { color: colors.textTertiary }]}>Tap + to create your first routine</Text>
+          </View>
+        ) : (
+          <View style={styles.routineList}>
+            {routines.map((item) => (
+              <View key={String(item.routine_id)} style={[styles.routineCard, { backgroundColor: colors.surface }]}>
+                {/* Routine header */}
+                <Pressable
+                  onPress={() => selectRoutine(item.routine_id)}
+                  onLongPress={() => handleLongPressRoutine(item.routine_id, item.routine_name)}
+                  delayLongPress={500}
+                  style={styles.routineHeader}
+                >
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={[styles.routineName, { color: colors.text }]}>{item.routine_name}</Text>
+                    {item.description ? (
+                      <Text style={[styles.routineDesc, { color: colors.textSecondary }]} numberOfLines={2}>
+                        {item.description}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Ionicons
+                    name={selectedRoutineId === item.routine_id ? "chevron-up" : "chevron-down"}
+                    size={18}
+                    color={colors.textTertiary}
+                  />
+                </Pressable>
+
+                {/* Expanded exercises */}
+                {selectedRoutineId === item.routine_id && (
+                  <View style={[styles.exercisesPanel, { borderTopColor: colors.border }]}>
+                    <View style={[styles.exercisesPanelHeader, { borderBottomColor: colors.border }]}>
+                      <Text style={[styles.exercisesPanelTitle, { color: colors.textSecondary }]}>EXERCISES</Text>
+                      <Pressable
+                        style={[styles.addExBtn, { backgroundColor: colors.primaryLight }]}
+                        onPress={() => setShowExercisePicker(true)}
+                      >
+                        <Ionicons name="add" size={16} color={colors.primary} />
+                        <Text style={[styles.addExText, { color: colors.primary }]}>Add</Text>
+                      </Pressable>
+                    </View>
+
+                    <ExercisePicker
+                      visible={showExercisePicker}
+                      onSelect={(ex) => addExerciseToRoutine(ex)}
+                      onClose={() => setShowExercisePicker(false)}
+                    />
+
+                    {loadingExercises ? (
+                      <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
+                    ) : routineExercises.length === 0 ? (
+                      <Text style={[styles.emptyExText, { color: colors.textTertiary }]}>No exercises added yet</Text>
+                    ) : (
+                      routineExercises.map((ex) => (
+                        <View key={String(ex.routine_exercise_id)}>
+                          <Pressable
+                            style={[
+                              styles.exerciseRow,
+                              { borderBottomColor: colors.border },
+                              expandedExerciseId === ex.routine_exercise_id && { backgroundColor: colors.primaryLight },
+                            ]}
+                            onPress={() => toggleExerciseSets(ex.routine_exercise_id)}
+                          >
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.exerciseName, { color: colors.text }]}>{ex.exercise_name}</Text>
+                            </View>
+                            <Pressable
+                              style={[styles.removeExBtn, { backgroundColor: colors.dangerLight }]}
+                              onPress={() => removeExerciseFromRoutine(ex.routine_exercise_id)}
+                            >
+                              <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                            </Pressable>
+                            <Ionicons
+                              name={expandedExerciseId === ex.routine_exercise_id ? "chevron-up" : "chevron-down"}
+                              size={16}
+                              color={colors.textTertiary}
+                              style={{ marginLeft: 8 }}
+                            />
+                          </Pressable>
+
+                          {expandedExerciseId === ex.routine_exercise_id && (
+                            <View style={[styles.setsPanel, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+                              <Text style={[styles.setsPanelTitle, { color: colors.textSecondary }]}>TEMPLATE SETS</Text>
+                              {loadingSets ? (
+                                <ActivityIndicator color={colors.primary} />
+                              ) : (
+                                <>
+                                  {exerciseSets.length > 0 && (
+                                    <View style={[styles.setColHeaders, { borderBottomColor: colors.border }]}>
+                                      <Text style={[styles.setColHeader, { width: 32, color: colors.textTertiary }]}>#</Text>
+                                      <Text style={[styles.setColHeader, { flex: 1, color: colors.textTertiary }]}>Reps</Text>
+                                      <Text style={[styles.setColHeader, { flex: 1, color: colors.textTertiary }]}>Weight</Text>
+                                      <Text style={[styles.setColHeader, { width: 36, color: colors.textTertiary }]}>W</Text>
+                                      <View style={{ width: 64 }} />
+                                    </View>
+                                  )}
+                                  {exerciseSets.map((set) => (
+                                    <View key={String(set.routine_set_id)} style={[styles.setRow, { borderBottomColor: colors.border }]}>
+                                      {editingSetId === set.routine_set_id ? (
+                                        <>
+                                          <Text style={[styles.setNum, { color: colors.textTertiary }]}>{set.set_number}</Text>
+                                          <TextInput
+                                            style={[styles.setInput, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border, flex: 1 }]}
+                                            placeholder="Reps" placeholderTextColor={colors.textTertiary}
+                                            value={editReps} onChangeText={setEditReps} keyboardType="numeric"
+                                            onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)}
+                                          />
+                                          <TextInput
+                                            style={[styles.setInput, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border, flex: 1 }]}
+                                            placeholder="lbs" placeholderTextColor={colors.textTertiary}
+                                            value={editWeight} onChangeText={setEditWeight} keyboardType="numeric"
+                                            onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)}
+                                          />
+                                          <Pressable
+                                            style={[styles.warmupToggle, editWarmup && { backgroundColor: colors.warningLight }, { width: 36 }]}
+                                            onPress={() => setEditWarmup(!editWarmup)}
+                                          >
+                                            <Text style={{ fontSize: 12, fontWeight: "700", color: editWarmup ? colors.warning : colors.textTertiary }}>W</Text>
+                                          </Pressable>
+                                          <View style={{ flexDirection: "row", gap: 4, width: 64 }}>
+                                            <Pressable style={[styles.saveBtn, { backgroundColor: colors.successLight }]} onPress={saveEditSet}>
+                                              <Ionicons name="checkmark" size={14} color={colors.success} />
+                                            </Pressable>
+                                            <Pressable style={[styles.saveBtn, { backgroundColor: colors.dangerLight }]} onPress={() => setEditingSetId(null)}>
+                                              <Ionicons name="close" size={14} color={colors.danger} />
+                                            </Pressable>
+                                          </View>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Text style={[styles.setNum, { color: colors.textTertiary }]}>{set.set_number}</Text>
+                                          <Text style={[styles.setVal, { flex: 1, color: colors.text }]}>{set.target_reps ?? "—"}</Text>
+                                          <Text style={[styles.setVal, { flex: 1, color: colors.text }]}>{set.target_weight ?? "—"}</Text>
+                                          <View style={{ width: 36, alignItems: "center" }}>
+                                            {set.is_warmup && <Text style={[styles.warmupChip, { color: colors.warning }]}>W</Text>}
+                                          </View>
+                                          <View style={{ flexDirection: "row", gap: 4, width: 64 }}>
+                                            <Pressable style={[styles.saveBtn, { backgroundColor: colors.surfaceSecondary }]} onPress={() => startEditSet(set)}>
+                                              <Ionicons name="pencil" size={12} color={colors.textSecondary} />
+                                            </Pressable>
+                                            <Pressable style={[styles.saveBtn, { backgroundColor: colors.dangerLight }]} onPress={() => deleteSet(set.routine_set_id)}>
+                                              <Ionicons name="trash-outline" size={12} color={colors.danger} />
+                                            </Pressable>
+                                          </View>
+                                        </>
+                                      )}
+                                    </View>
+                                  ))}
+                                  {exerciseSets.length === 0 && (
+                                    <Text style={[styles.emptyExText, { color: colors.textTertiary }]}>No template sets</Text>
+                                  )}
+                                  <Pressable style={[styles.addSetRow, { borderTopColor: colors.border }]} onPress={addSet}>
+                                    <Ionicons name="add" size={16} color={colors.primary} />
+                                    <Text style={[styles.addSetRowText, { color: colors.primary }]}>Add Set</Text>
+                                  </Pressable>
+                                </>
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      ))
+                    )}
+                  </View>
+                )}
+
+                {/* Start Routine button */}
+                <Pressable
+                  style={[
+                    styles.startBtn,
+                    { backgroundColor: colors.primary },
+                    startingWorkout && { opacity: 0.6 },
+                  ]}
+                  disabled={startingWorkout}
+                  onPress={() => handleStartWorkout(item.routine_id)}
+                >
+                  <Text style={styles.startBtnText}>
+                    {startingWorkout ? "Starting…" : "Start Routine"}
+                  </Text>
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  // Header
+  pageHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 60,
+    paddingBottom: 14,
+    paddingHorizontal: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  pageTitle: { flex: 1, fontSize: 28, fontWeight: "800", letterSpacing: -0.5 },
+  offlineBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  offlineText: { fontSize: 12, fontWeight: "700" },
+
+  // Error
+  errorBanner: { marginHorizontal: 16, marginTop: 12, padding: 12, borderRadius: 10 },
+  errorText: { fontSize: 14, fontWeight: "500" },
+
+  // Section header
+  sectionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 12,
+  },
+  sectionTitle: { flex: 1, fontSize: 20, fontWeight: "700" },
+  createBtn: {
+    width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+
+  // Create form
+  formCard: { marginHorizontal: 16, marginBottom: 12, borderRadius: 14, padding: 16, gap: 10 },
+  input: {
+    borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, padding: 12,
+    fontSize: 15,
+  },
+  formCancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center" },
+  formCancelText: { fontSize: 15, fontWeight: "600" },
+  formSaveBtn: { flex: 2, paddingVertical: 12, borderRadius: 10, alignItems: "center" },
+  formSaveText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+
+  // Empty state
+  emptyState: { alignItems: "center", paddingVertical: 48, gap: 8 },
+  emptyText: { fontSize: 17, fontWeight: "600" },
+  emptySubText: { fontSize: 14 },
+
+  // Routine list
+  routineList: { paddingHorizontal: 16, gap: 10 },
+  routineCard: { borderRadius: 14, overflow: "hidden" },
+  routineHeader: { flexDirection: "row", alignItems: "center", padding: 16 },
+  routineName: { fontSize: 17, fontWeight: "700" },
+  routineDesc: { fontSize: 14, marginTop: 2 },
+
+  // Expanded exercises
+  exercisesPanel: { borderTopWidth: StyleSheet.hairlineWidth },
+  exercisesPanelHeader: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  exercisesPanelTitle: { fontSize: 11, fontWeight: "700", letterSpacing: 0.6 },
+  addExBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  addExText: { fontSize: 13, fontWeight: "700" },
+  exerciseRow: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  exerciseName: { fontSize: 15, fontWeight: "600" },
+  removeExBtn: { padding: 6, borderRadius: 8 },
+  emptyExText: { fontSize: 14, textAlign: "center", paddingVertical: 16, paddingHorizontal: 16 },
+
+  // Sets panel
+  setsPanel: {
+    paddingHorizontal: 16, paddingBottom: 12, paddingTop: 10, borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  setsPanelTitle: { fontSize: 11, fontWeight: "700", letterSpacing: 0.6, marginBottom: 8 },
+  setColHeaders: {
+    flexDirection: "row", alignItems: "center", paddingVertical: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth, marginBottom: 4,
+  },
+  setColHeader: { fontSize: 11, fontWeight: "700", textAlign: "center" },
+  setRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, gap: 4, borderBottomWidth: StyleSheet.hairlineWidth },
+  setNum: { width: 32, fontSize: 13, fontWeight: "600", textAlign: "center" },
+  setVal: { fontSize: 14, textAlign: "center" },
+  setInput: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 8, padding: 6, fontSize: 14, textAlign: "center" },
+  warmupToggle: { width: 36, height: 30, alignItems: "center", justifyContent: "center", borderRadius: 6 },
+  warmupChip: { fontSize: 12, fontWeight: "700" },
+  saveBtn: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderRadius: 8 },
+  addSetRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, marginTop: 4 },
+  addSetRowText: { fontSize: 14, fontWeight: "700" },
+
+  // Start button
+  startBtn: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    marginTop: 4,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  startBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+});

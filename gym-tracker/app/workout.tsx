@@ -1,17 +1,24 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
-  ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { db } from "./backend/db";
 import { useTheme } from "./theme/ThemeContext";
 import { useGuardedPress } from "./utils/pressGuard";
+import ExercisePicker from "./components/ExercisePicker";
+import RestTimerBanner from "./components/RestTimerBanner";
+import { useRestTimer } from "./utils/useRestTimer";
+import { detectPRs } from "./utils/prDetection";
+import { useUnits } from "./utils/units";
 
 export default function WorkoutScreen() {
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
   const { colors } = useTheme();
+  const { toDisplay, label: unitLabel } = useUnits();
   const { sessionId: sessionIdParam } = useLocalSearchParams<{ sessionId: string }>();
 
   const [session, setSession] = useState<any>(null);
@@ -26,6 +33,10 @@ export default function WorkoutScreen() {
   const [setOptionsVisible, setSetOptionsVisible] = useState(false);
   const [selectedSet, setSelectedSet] = useState<any>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<number | null>(null);
+  const [showAddExercise, setShowAddExercise] = useState(false);
+  const [prevSets, setPrevSets] = useState<Record<string, any[]>>({});
+
+  const restTimer = useRestTimer();
 
   const totalVolume = useMemo(() => {
     let total = 0;
@@ -38,6 +49,11 @@ export default function WorkoutScreen() {
     }
     return total;
   }, [exerciseSets]);
+
+  const completedSetsCount = useMemo(() =>
+    Object.values(exerciseSets).flat().filter((s) => s.completed).length,
+    [exerciseSets]
+  );
 
   useEffect(() => {
     if (!session || session.end_time) return;
@@ -60,9 +76,11 @@ export default function WorkoutScreen() {
     setLoading(true);
     const sessionId = parseInt(sessionIdParam, 10);
 
-    const [sessionResult, exercisesResult] = await Promise.all([
+    // Fetch session, exercises, and current user all in parallel
+    const [sessionResult, exercisesResult, userResult] = await Promise.all([
       db.getWorkoutSession(sessionId),
       db.getSessionExercises(sessionId),
+      db.getUser(),
     ]);
 
     if (sessionResult.data) {
@@ -73,16 +91,30 @@ export default function WorkoutScreen() {
     const exs = exercisesResult.data ?? [];
     setExercises(exs);
 
-    // Load all sets in parallel
-    const setsResults = await Promise.all(
-      exs.map((ex: any) => db.getSessionExerciseSets(ex.session_exercise_id))
-    );
+    const userId = userResult.data?.user?.id;
+
+    // Fetch all sets and all previous sets in parallel
+    const [setsResults, prevResults] = await Promise.all([
+      Promise.all(exs.map((ex: any) => db.getSessionExerciseSets(ex.session_exercise_id))),
+      userId && sessionResult.data
+        ? Promise.all(exs.map((ex: any) =>
+            db.getPreviousSessionSets(ex.exercise_id, userId, sessionResult.data!.session_id)
+          ))
+        : Promise.resolve([]),
+    ]);
 
     const setsMap: Record<number, any[]> = {};
     exs.forEach((ex: any, i: number) => {
       setsMap[ex.session_exercise_id] = setsResults[i].data ?? [];
     });
     setExerciseSets(setsMap);
+
+    const prevMap: Record<string, any[]> = {};
+    exs.forEach((ex: any, i: number) => {
+      prevMap[ex.exercise_id] = (prevResults[i] as any)?.data ?? [];
+    });
+    setPrevSets(prevMap);
+
     setLoading(false);
   };
 
@@ -91,13 +123,11 @@ export default function WorkoutScreen() {
     setExerciseSets((prev) => ({ ...prev, [sessionExerciseId]: data ?? [] }));
   };
 
-  // Optimistic update + background sync
   const updateSet = useCallback(async (
     sessionSetId: number,
     sessionExerciseId: number,
     updates: { reps?: number | null; weight?: number | null; is_warmup?: boolean; completed?: boolean }
   ) => {
-    // Optimistic update
     setExerciseSets((prev) => {
       const sets = prev[sessionExerciseId] ?? [];
       return {
@@ -111,7 +141,6 @@ export default function WorkoutScreen() {
     const { error } = await db.updateSessionExerciseSet(sessionSetId, updates);
     if (error) {
       setError(error.message);
-      // Rollback on error
       reloadSetsForExercise(sessionExerciseId);
     }
   }, []);
@@ -144,7 +173,6 @@ export default function WorkoutScreen() {
   }, 300);
 
   const deleteSet = async (sessionSetId: number, sessionExerciseId: number) => {
-    // Optimistic remove
     setExerciseSets((prev) => ({
       ...prev,
       [sessionExerciseId]: (prev[sessionExerciseId] ?? []).filter(
@@ -189,15 +217,63 @@ export default function WorkoutScreen() {
     if (!session) return;
     setError(null);
     const { error } = await db.finishWorkoutSession(session.session_id, notes || null);
-    if (error) setError(error.message);
-    else router.back();
+    if (error) { setError(error.message); return; }
+
+    try {
+      const { data: userData } = await db.getUser();
+      const userId = userData?.user?.id;
+      if (userId) {
+        const { data: existingPRs } = await db.getPersonalRecords(userId);
+        const prs = detectPRs(exercises, exerciseSets, existingPRs ?? []);
+        for (const pr of prs) {
+          const sets = (exerciseSets[exercises.find((e: any) => e.exercise_id === pr.exerciseId)?.session_exercise_id] ?? []).filter((s: any) => s.completed);
+          const maxW = sets.reduce((m: number, s: any) => (s.weight != null && s.weight > m ? s.weight : m), 0);
+          const maxVol = sets.reduce((sum: number, s: any) => s.weight && s.reps ? sum + s.weight * s.reps : sum, 0);
+          await db.upsertPersonalRecord({ user_id: userId, exercise_id: pr.exerciseId, max_weight: maxW || null, max_volume: maxVol || null });
+        }
+        if (prs.length > 0) {
+          Alert.alert(
+            "New PRs!",
+            prs.map((p) => `${p.exerciseName} (${p.type === "both" ? "weight & volume" : p.type})`).join("\n"),
+            [{ text: "OK", onPress: () => router.back() }]
+          );
+          return;
+        }
+      }
+    } catch (_) {}
+    router.back();
   }, 1000);
 
   const discardWorkout = useGuardedPress(async () => {
     if (!session) return;
-    await db.deleteWorkoutSession(session.session_id);
-    router.back();
-  }, 1000);
+    Alert.alert(
+      "Discard Workout",
+      "This workout will be deleted. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Discard", style: "destructive", onPress: async () => {
+          await db.deleteWorkoutSession(session.session_id);
+          router.back();
+        }},
+      ]
+    );
+  }, 500);
+
+  const handleAddExercise = useGuardedPress(async (exercise: any) => {
+    if (!session) return;
+    setShowAddExercise(false);
+    const { data: newEx, error } = await db.insertSessionExercise({
+      session_id: session.session_id,
+      exercise_id: exercise.id,
+      exercise_name: exercise.name,
+      exercise_order: exercises.length + 1,
+      notes: null,
+    });
+    if (error) { setError(error.message); return; }
+    setExercises((prev) => [...prev, newEx]);
+    setExerciseSets((prev) => ({ ...prev, [newEx.session_exercise_id]: [] }));
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+  });
 
   useEffect(() => { loadSession(); }, []);
 
@@ -205,7 +281,7 @@ export default function WorkoutScreen() {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={{ color: colors.textSecondary, marginTop: 8 }}>Loading workout...</Text>
+        <Text style={{ color: colors.textSecondary, marginTop: 10, fontSize: 14 }}>Loading workout…</Text>
       </View>
     );
   }
@@ -214,107 +290,194 @@ export default function WorkoutScreen() {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.text }}>Session not found</Text>
-        <Pressable onPress={() => router.back()}>
-          <Text style={[styles.backText, { color: colors.primary }]}>← Back</Text>
+        <Pressable onPress={() => router.back()} style={{ marginTop: 12 }}>
+          <Text style={{ color: colors.primary, fontWeight: "600" }}>Go back</Text>
         </Pressable>
       </View>
     );
   }
+
+  const volumeDisplay = (toDisplay(totalVolume) ?? totalVolume).toLocaleString();
 
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
+      {/* ── Sticky header ── */}
+      <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+        <Pressable onPress={() => discardWorkout()} hitSlop={8} style={styles.headerBack}>
+          <Ionicons name="chevron-down" size={22} color={colors.textSecondary} />
+        </Pressable>
+        <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+          {session.session_name}
+        </Text>
+        <View style={styles.headerRight}>
+          <View style={[styles.timerPill, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.timerText, { color: colors.primary }]}>{formatTime(elapsed)}</Text>
+          </View>
+          <Pressable style={[styles.finishPill, { backgroundColor: colors.primary }]} onPress={finishWorkout}>
+            <Text style={styles.finishPillText}>Finish</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {/* ── Stats bar ── */}
+      <View style={[styles.statsBar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+        <View style={styles.statItem}>
+          <Text style={[styles.statValue, { color: colors.primary }]}>{formatTime(elapsed)}</Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Duration</Text>
+        </View>
+        <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+        <View style={styles.statItem}>
+          <Text style={[styles.statValue, { color: colors.text }]}>{volumeDisplay} {unitLabel}</Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Volume</Text>
+        </View>
+        <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+        <View style={styles.statItem}>
+          <Text style={[styles.statValue, { color: colors.text }]}>{completedSetsCount}</Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Sets</Text>
+        </View>
+      </View>
+
       <ScrollView
         ref={scrollRef}
-        style={[styles.container, { backgroundColor: colors.background }]}
-        contentContainerStyle={{ paddingBottom: 120 }}
+        style={{ flex: 1, backgroundColor: colors.background }}
+        contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={true}
       >
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.title, { color: colors.text }]}>{session.session_name}</Text>
-            <Text style={[styles.volumeText, { color: colors.textSecondary }]}>
-              Volume: {totalVolume.toLocaleString()} lbs
-            </Text>
+        {error && (
+          <View style={[styles.errorBanner, { backgroundColor: colors.dangerLight }]}>
+            <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
           </View>
-          <Text style={[styles.timer, { color: colors.primary }]}>{formatTime(elapsed)}</Text>
-        </View>
-
-        {error && <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>}
+        )}
 
         {exercises.map((ex) => {
           const sets = exerciseSets[ex.session_exercise_id] ?? [];
           return (
-            <View key={ex.session_exercise_id} style={[styles.exerciseCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={[styles.exerciseName, { color: colors.text }]}>{ex.exercise_name}</Text>
+            <View key={ex.session_exercise_id} style={[styles.exerciseCard, { backgroundColor: colors.surface }]}>
+              {/* Exercise name — blue, tappable */}
+              <View style={styles.exerciseHeaderRow}>
+                <Pressable
+                  style={styles.exerciseNameBtn}
+                  onPress={() => router.push({
+                    pathname: "/exercise-detail/[exerciseId]",
+                    params: { exerciseId: ex.exercise_id, exerciseName: ex.exercise_name },
+                  })}
+                >
+                  <Text style={[styles.exerciseName, { color: colors.primary }]}>
+                    {ex.exercise_name}
+                  </Text>
+                </Pressable>
+                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textTertiary} />
+              </View>
 
-              {sets.length > 0 && (
-                <View style={[styles.setHeader, { borderBottomColor: colors.border }]}>
-                  <Text style={[styles.headerCell, { width: 40, color: colors.textSecondary }]}>Set</Text>
-                  <Text style={[styles.headerCell, { flex: 1, color: colors.textSecondary }]}>lbs</Text>
-                  <Text style={[styles.headerCell, { flex: 1, color: colors.textSecondary }]}>Reps</Text>
-                  <Text style={[styles.headerCell, { width: 50, color: colors.textSecondary }]}></Text>
-                </View>
-              )}
+              {/* Column headers */}
+              <View style={[styles.colHeaders, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.colHeader, styles.colSet, { color: colors.textTertiary }]}>SET</Text>
+                <Text style={[styles.colHeader, styles.colPrev, { color: colors.textTertiary }]}>PREVIOUS</Text>
+                <Text style={[styles.colHeader, styles.colVal, { color: colors.textTertiary }]}>{unitLabel.toUpperCase()}</Text>
+                <Text style={[styles.colHeader, styles.colVal, { color: colors.textTertiary }]}>REPS</Text>
+                <View style={styles.colCheck} />
+              </View>
 
-              {sets.map((set) => (
+              {/* Set rows */}
+              {sets.map((set, idx) => (
                 <SetRow
                   key={set.session_set_id}
                   set={set}
                   sessionExerciseId={ex.session_exercise_id}
                   onUpdate={updateSet}
                   onSetNumberPress={openSetOptions}
-                  scrollRef={scrollRef}
+                  prevSet={prevSets[ex.exercise_id]?.[idx]}
+                  onComplete={() => restTimer.start()}
                 />
               ))}
 
-              <Pressable style={[styles.addSetButton, { backgroundColor: colors.primary }]} onPress={() => addSet(ex.session_exercise_id)}>
-                <Text style={styles.addSetText}>+ Add Set</Text>
+              {/* + Add Set — full-width dark button */}
+              <Pressable
+                style={[styles.addSetBtn, { backgroundColor: colors.surfaceSecondary }]}
+                onPress={() => addSet(ex.session_exercise_id)}
+              >
+                <Ionicons name="add" size={18} color={colors.textSecondary} />
+                <Text style={[styles.addSetText, { color: colors.textSecondary }]}>Add Set</Text>
               </Pressable>
             </View>
           );
         })}
 
+        {/* Add Exercise */}
+        <Pressable
+          style={[styles.addExerciseBtn, { backgroundColor: colors.surface }]}
+          onPress={() => setShowAddExercise(true)}
+        >
+          <Ionicons name="add" size={20} color={colors.primary} />
+          <Text style={[styles.addExerciseText, { color: colors.primary }]}>Add Exercise</Text>
+        </Pressable>
+
+        {/* Notes */}
         <TextInput
-          style={[styles.notesInput, { borderColor: colors.border, backgroundColor: colors.inputBackground, color: colors.text }]}
-          placeholder="Workout notes..."
+          style={[styles.notesInput, {
+            backgroundColor: colors.surface,
+            color: notes ? colors.text : colors.textTertiary,
+          }]}
+          placeholder="Add notes…"
           placeholderTextColor={colors.textTertiary}
           value={notes}
           onChangeText={setNotes}
           multiline
         />
 
-        <View style={styles.actions}>
-          <Pressable style={[styles.finishButton, { backgroundColor: colors.success }]} onPress={finishWorkout}>
-            <Text style={styles.finishText}>Finish Workout</Text>
-          </Pressable>
-          <Pressable style={[styles.discardButton, { backgroundColor: colors.dangerLight }]} onPress={discardWorkout}>
-            <Text style={[styles.discardText, { color: colors.danger }]}>Discard</Text>
-          </Pressable>
-        </View>
+        {/* Discard */}
+        <Pressable style={styles.discardBtn} onPress={discardWorkout}>
+          <Text style={[styles.discardText, { color: colors.danger }]}>Discard Workout</Text>
+        </Pressable>
       </ScrollView>
 
-      <Modal visible={setOptionsVisible} transparent animationType="fade" onRequestClose={closeSetOptions}>
+      <RestTimerBanner
+        remaining={restTimer.remaining}
+        onSkip={restTimer.skip}
+        onAddTime={restTimer.addTime}
+      />
+
+      <ExercisePicker
+        visible={showAddExercise}
+        onSelect={handleAddExercise}
+        onClose={() => setShowAddExercise(false)}
+      />
+
+      {/* Set options bottom sheet */}
+      <Modal visible={setOptionsVisible} transparent animationType="slide" onRequestClose={closeSetOptions}>
         <Pressable style={modalStyles.overlay} onPress={closeSetOptions}>
-          <View style={[modalStyles.container, { backgroundColor: colors.surface }]}>
-            <Text style={[modalStyles.title, { color: colors.text }]}>Set #{selectedSet?.set_number}</Text>
-            {selectedSet?.is_warmup && (
-              <View style={[modalStyles.warmupBadge, { backgroundColor: colors.warningLight }]}>
-                <Text style={modalStyles.warmupBadgeText}>Warmup Set</Text>
+          <View style={[modalStyles.sheet, { backgroundColor: colors.surface }]}>
+            <View style={[modalStyles.handle, { backgroundColor: colors.border }]} />
+            <Text style={[modalStyles.sheetTitle, { color: colors.textSecondary }]}>
+              Set {selectedSet?.set_number}
+            </Text>
+
+            <Pressable style={[modalStyles.option, { borderBottomColor: colors.border }]} onPress={handleToggleWarmup}>
+              <View style={[modalStyles.iconWrap, { backgroundColor: colors.warningLight }]}>
+                <Text style={{ fontSize: 16 }}>🔥</Text>
               </View>
-            )}
-            <Pressable style={modalStyles.option} onPress={handleToggleWarmup}>
-              <Text style={modalStyles.optionIcon}>🔥</Text>
-              <Text style={[modalStyles.optionText, { color: colors.text }]}>{selectedSet?.is_warmup ? "Remove Warmup" : "Mark as Warmup"}</Text>
+              <Text style={[modalStyles.optionLabel, { color: colors.text }]}>
+                {selectedSet?.is_warmup ? "Remove Warmup" : "Mark as Warmup"}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
             </Pressable>
-            <View style={[modalStyles.divider, { backgroundColor: colors.border }]} />
-            <Pressable style={[modalStyles.option, { backgroundColor: colors.dangerLight }]} onPress={handleRemoveSet}>
-              <Text style={modalStyles.removeIcon}>🗑</Text>
-              <Text style={[modalStyles.removeText, { color: colors.danger }]}>Remove Set</Text>
+
+            <Pressable style={modalStyles.option} onPress={handleRemoveSet}>
+              <View style={[modalStyles.iconWrap, { backgroundColor: colors.dangerLight }]}>
+                <Ionicons name="trash-outline" size={16} color={colors.danger} />
+              </View>
+              <Text style={[modalStyles.optionLabel, { color: colors.danger }]}>Remove Set</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.danger} style={{ opacity: 0.4 }} />
             </Pressable>
-            <Pressable style={[modalStyles.cancelButton, { backgroundColor: colors.surfaceSecondary }]} onPress={closeSetOptions}>
+
+            <Pressable
+              style={[modalStyles.cancelBtn, { backgroundColor: colors.surfaceSecondary }]}
+              onPress={closeSetOptions}
+            >
               <Text style={[modalStyles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
             </Pressable>
           </View>
@@ -324,18 +487,22 @@ export default function WorkoutScreen() {
   );
 }
 
+// ─── SetRow ──────────────────────────────────────────────────────────────────
+
 function SetRow({
   set,
   sessionExerciseId,
   onUpdate,
   onSetNumberPress,
-  scrollRef,
+  prevSet,
+  onComplete,
 }: {
   set: any;
   sessionExerciseId: number;
   onUpdate: (id: number, exId: number, updates: any) => void;
   onSetNumberPress: (set: any, sessionExerciseId: number) => void;
-  scrollRef: React.RefObject<ScrollView>;
+  prevSet?: any;
+  onComplete?: () => void;
 }) {
   const { colors } = useTheme();
   const [weight, setWeight] = useState(set.weight != null ? String(set.weight) : "");
@@ -347,7 +514,6 @@ function SetRow({
     setReps(set.reps != null ? String(set.reps) : "");
   }, [set.weight, set.reps]);
 
-  // Debounced commit — saves 500ms after the user stops typing
   const commitWeight = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -364,7 +530,6 @@ function SetRow({
     }, 500);
   }, [reps, set.reps, set.session_set_id, sessionExerciseId, onUpdate]);
 
-  // Commit immediately on blur
   const commitWeightNow = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const val = weight ? parseFloat(weight) : null;
@@ -382,131 +547,314 @@ function SetRow({
   }, []);
 
   const toggleCompleted = useCallback(() => {
-    // Commit any pending values first
     const weightVal = weight ? parseFloat(weight) : null;
     const repsVal = reps ? parseInt(reps, 10) : null;
-    const updates: any = { completed: !set.completed };
+    const completing = !set.completed;
+    const updates: any = { completed: completing };
     if (weightVal !== set.weight) updates.weight = weightVal;
     if (repsVal !== set.reps) updates.reps = repsVal;
     onUpdate(set.session_set_id, sessionExerciseId, updates);
-  }, [weight, reps, set, sessionExerciseId, onUpdate]);
+    if (completing) onComplete?.();
+  }, [weight, reps, set, sessionExerciseId, onUpdate, onComplete]);
 
   const isCompleted = set.completed === true;
   const isWarmup = set.is_warmup === true;
 
+  const prevText = prevSet?.weight != null && prevSet?.reps != null
+    ? `${prevSet.weight}${" × "}${prevSet.reps}`
+    : prevSet?.weight != null
+    ? `${prevSet.weight}`
+    : prevSet?.reps != null
+    ? `${prevSet.reps} reps`
+    : "—";
+
+  const rowBg = isCompleted
+    ? (colors.successLight + "80")
+    : "transparent";
+
   return (
-    <View style={[rowStyles.row, isCompleted && { backgroundColor: colors.successLight }]}>
+    <View style={[rowStyles.row, { backgroundColor: rowBg, borderBottomColor: colors.border }]}>
+      {/* Set badge */}
       <Pressable
         style={[
-          rowStyles.setNumberBtn,
-          { width: 40, backgroundColor: colors.surfaceSecondary },
+          rowStyles.badge,
           isWarmup && { backgroundColor: colors.warningLight },
+          isCompleted && { backgroundColor: colors.successLight },
         ]}
         onPress={() => onSetNumberPress(set, sessionExerciseId)}
+        hitSlop={8}
       >
         <Text style={[
-          rowStyles.setNumberText,
-          { color: colors.textSecondary },
-          isWarmup && { color: "#92400e" },
+          rowStyles.badgeText,
+          { color: colors.textTertiary },
+          isWarmup && { color: "#ffd60a" },
           isCompleted && { color: colors.success },
         ]}>
           {isWarmup ? "W" : set.set_number}
         </Text>
       </Pressable>
+
+      {/* Previous */}
+      <Text style={[rowStyles.prevText, { color: colors.textTertiary }]} numberOfLines={1}>
+        {prevText}
+      </Text>
+
+      {/* Weight input */}
       <TextInput
-        style={[
-          rowStyles.input,
-          { flex: 1, borderColor: colors.border, backgroundColor: colors.inputBackground, color: colors.text },
-          isCompleted && { backgroundColor: colors.successLight, borderColor: colors.success, color: colors.success },
-        ]}
+        style={[rowStyles.input, {
+          backgroundColor: isCompleted ? colors.successLight : colors.inputBackground,
+          color: isCompleted ? colors.success : colors.text,
+        }]}
         value={weight}
-        onChangeText={(t) => { setWeight(t); }}
+        onChangeText={(t) => { setWeight(t); commitWeight(); }}
         onBlur={commitWeightNow}
         keyboardType="numeric"
         placeholder="—"
         placeholderTextColor={colors.textTertiary}
         editable={!isCompleted}
-        onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200)}
+        selectTextOnFocus
       />
+
+      {/* Reps input */}
       <TextInput
-        style={[
-          rowStyles.input,
-          { flex: 1, borderColor: colors.border, backgroundColor: colors.inputBackground, color: colors.text },
-          isCompleted && { backgroundColor: colors.successLight, borderColor: colors.success, color: colors.success },
-        ]}
+        style={[rowStyles.input, {
+          backgroundColor: isCompleted ? colors.successLight : colors.inputBackground,
+          color: isCompleted ? colors.success : colors.text,
+        }]}
         value={reps}
-        onChangeText={(t) => { setReps(t); }}
+        onChangeText={(t) => { setReps(t); commitReps(); }}
         onBlur={commitRepsNow}
         keyboardType="numeric"
         placeholder="—"
         placeholderTextColor={colors.textTertiary}
         editable={!isCompleted}
-        onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200)}
+        selectTextOnFocus
       />
+
+      {/* Check button */}
       <Pressable
         style={[
           rowStyles.checkBtn,
-          { width: 50, backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
-          isCompleted && { backgroundColor: colors.success, borderColor: colors.success },
+          isCompleted
+            ? { backgroundColor: colors.success, borderColor: colors.success }
+            : { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
         ]}
         onPress={toggleCompleted}
+        hitSlop={6}
       >
-        <Text style={[
-          rowStyles.checkText,
-          { color: colors.textTertiary },
-          isCompleted && { color: "#fff" },
-        ]}>
-          ✓
-        </Text>
+        <Ionicons
+          name="checkmark"
+          size={16}
+          color={isCompleted ? "#fff" : colors.textTertiary}
+        />
       </Pressable>
     </View>
   );
 }
 
-const modalStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
-  container: { borderRadius: 16, padding: 24, width: 280, alignItems: "center", elevation: 8, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12 },
-  title: { fontSize: 18, fontWeight: "700", marginBottom: 8 },
-  warmupBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginBottom: 16 },
-  warmupBadgeText: { fontSize: 12, fontWeight: "700", color: "#92400e" },
-  option: { flexDirection: "row", alignItems: "center", paddingVertical: 14, paddingHorizontal: 16, width: "100%", borderRadius: 10, gap: 12 },
-  optionIcon: { fontSize: 20 },
-  optionText: { fontSize: 16, fontWeight: "600" },
-  divider: { height: 1, width: "100%", marginVertical: 4 },
-  removeIcon: { fontSize: 20 },
-  removeText: { fontSize: 16, fontWeight: "600" },
-  cancelButton: { marginTop: 16, paddingVertical: 12, paddingHorizontal: 32, borderRadius: 10, width: "100%", alignItems: "center" },
-  cancelText: { fontSize: 16, fontWeight: "600" },
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+  // Header
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 56,
+    paddingBottom: 10,
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  headerBack: { width: 28 },
+  headerTitle: { flex: 1, fontSize: 17, fontWeight: "600", letterSpacing: -0.2 },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  timerPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  timerText: { fontSize: 14, fontWeight: "700", fontVariant: ["tabular-nums"] },
+  finishPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  finishPillText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+
+  // Stats bar
+  statsBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  statItem: { flex: 1, alignItems: "center" },
+  statValue: { fontSize: 15, fontWeight: "700" },
+  statLabel: { fontSize: 11, fontWeight: "500", marginTop: 1 },
+  statDivider: { width: StyleSheet.hairlineWidth, height: 28, marginHorizontal: 4 },
+
+  // Scroll
+  scrollContent: { paddingBottom: 120 },
+
+  // Error
+  errorBanner: { margin: 16, padding: 12, borderRadius: 10 },
+  errorText: { fontSize: 14, fontWeight: "500" },
+
+  // Exercise card
+  exerciseCard: {
+    marginBottom: 1,
+    paddingTop: 14,
+  },
+  exerciseHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  exerciseNameBtn: { flex: 1, marginRight: 8 },
+  exerciseName: { fontSize: 16, fontWeight: "700" },
+
+  // Column headers
+  colHeaders: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  colHeader: { fontSize: 11, fontWeight: "700", letterSpacing: 0.3, textAlign: "center" },
+  colSet: { width: 32 },
+  colPrev: { flex: 1, textAlign: "left", paddingLeft: 4 },
+  colVal: { width: 68, textAlign: "center" },
+  colCheck: { width: 40 },
+
+  // Add Set
+  addSetBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginHorizontal: 16,
+    marginVertical: 10,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  addSetText: { fontSize: 15, fontWeight: "600" },
+
+  // Add Exercise
+  addExerciseBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginHorizontal: 16,
+    marginTop: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  addExerciseText: { fontSize: 16, fontWeight: "600" },
+
+  // Notes
+  notesInput: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    minHeight: 72,
+    textAlignVertical: "top",
+  },
+
+  // Discard
+  discardBtn: { alignItems: "center", paddingVertical: 20 },
+  discardText: { fontSize: 15, fontWeight: "500" },
 });
 
 const rowStyles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", paddingVertical: 6, gap: 4, borderRadius: 6, paddingHorizontal: 4 },
-  setNumberBtn: { alignItems: "center", justifyContent: "center", paddingVertical: 6, borderRadius: 6 },
-  setNumberText: { fontSize: 14, fontWeight: "700" },
-  input: { borderWidth: 1, borderRadius: 6, padding: 8, fontSize: 16, textAlign: "center" },
-  checkBtn: { alignItems: "center", justifyContent: "center", paddingVertical: 8, borderRadius: 6, borderWidth: 2 },
-  checkText: { fontSize: 18, fontWeight: "700" },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  badge: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeText: { fontSize: 13, fontWeight: "700" },
+  prevText: {
+    flex: 1,
+    fontSize: 13,
+    paddingLeft: 4,
+  },
+  input: {
+    width: 68,
+    height: 40,
+    borderRadius: 8,
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
+    textAlignVertical: "center",
+    includeFontPadding: false,
+    padding: 0,
+    paddingHorizontal: 4,
+  },
+  checkBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, paddingTop: 60 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
-  title: { fontSize: 22, fontWeight: "700" },
-  volumeText: { fontSize: 14, fontWeight: "600", marginTop: 2 },
-  timer: { fontSize: 24, fontWeight: "700", fontVariant: ["tabular-nums"] },
-  backText: { fontSize: 16, fontWeight: "600", marginTop: 12 },
-  errorText: { marginBottom: 8 },
-  exerciseCard: { borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1 },
-  exerciseName: { fontSize: 18, fontWeight: "700", marginBottom: 8 },
-  setHeader: { flexDirection: "row", paddingVertical: 4, borderBottomWidth: 1, marginBottom: 4 },
-  headerCell: { fontSize: 12, fontWeight: "700", textAlign: "center" },
-  addSetButton: { marginTop: 8, paddingVertical: 8, borderRadius: 6, alignItems: "center" },
-  addSetText: { color: "#fff", fontWeight: "600" },
-  notesInput: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 16, minHeight: 80, textAlignVertical: "top", marginBottom: 16 },
-  actions: { gap: 12 },
-  finishButton: { paddingVertical: 14, borderRadius: 10, alignItems: "center" },
-  finishText: { color: "#fff", fontSize: 18, fontWeight: "700" },
-  discardButton: { paddingVertical: 14, borderRadius: 10, alignItems: "center" },
-  discardText: { fontSize: 16, fontWeight: "600" },
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 8,
+    paddingBottom: 44,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    elevation: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+  },
+  handle: { width: 36, height: 4, borderRadius: 2, marginBottom: 16 },
+  sheetTitle: { fontSize: 12, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 12 },
+  option: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    paddingVertical: 14,
+    gap: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  iconWrap: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  optionLabel: { fontSize: 16, fontWeight: "600", flex: 1 },
+  cancelBtn: {
+    marginTop: 14,
+    paddingVertical: 14,
+    borderRadius: 12,
+    width: "100%",
+    alignItems: "center",
+  },
+  cancelText: { fontSize: 16, fontWeight: "600" },
 });
