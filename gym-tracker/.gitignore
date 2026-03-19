@@ -32,14 +32,19 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env 
 
 # typescript
 *.tsbuildinfo
 
 app-example
 
-.env 
+
 
 # generated native folders
 /ios
 /android
+
+
+# Project Artifacts
+/Project_Docs/PROJECT_ARTIFACTS.pdf

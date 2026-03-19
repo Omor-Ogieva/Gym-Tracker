@@ -178,7 +178,7 @@ export default function WorkoutsScreen() {
       >
         {/* ── Page title ── */}
         <View style={[styles.pageHeader, { borderBottomColor: colors.border }]}>
-          <Text style={[styles.pageTitle, { color: colors.text }]}>Workout</Text>
+          <Text style={[styles.pageTitle, { color: colors.text }]}>Workouts</Text>
           {!isOnline && (
             <View style={[styles.offlineBadge, { backgroundColor: colors.warningLight }]}>
               <Text style={[styles.offlineText, { color: colors.warning }]}>Offline</Text>
