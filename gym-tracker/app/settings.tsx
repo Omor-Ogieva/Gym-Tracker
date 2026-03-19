@@ -331,7 +331,7 @@ function AboutModal({ visible, onClose }: { visible: boolean; onClose: () => voi
     <ModalShell visible={visible} onClose={onClose} title="About">
       <View style={{ alignItems: "center", gap: 6, marginBottom: 20 }}>
         <Text style={{ fontSize: 48 }}>🏋️</Text>
-        <Text style={{ fontSize: 22, fontWeight: "800", color: colors.text }}>Gym Tracker</Text>
+        <Text style={{ fontSize: 22, fontWeight: "800", color: colors.text }}>Summit</Text>
         <Text style={{ fontSize: 13, color: colors.textTertiary }}>Version 1.0.0</Text>
       </View>
       <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: "center", lineHeight: 22, marginBottom: 20 }}>

@@ -10,6 +10,7 @@ export default function TabsLayout() {
 
   const screenOptions = useMemo(() => ({
     headerShown: false,
+    sceneContainerStyle: { backgroundColor: colors.background },
     tabBarStyle: {
       backgroundColor: colors.tabBar,
       borderTopWidth: 1,

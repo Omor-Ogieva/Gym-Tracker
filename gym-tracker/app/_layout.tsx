@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { View } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { db } from "./backend/db";
 import { ThemeProvider, useTheme } from "./theme/ThemeContext";
@@ -46,20 +47,22 @@ function RootNav() {
   if (loading) return null;
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: colors.background },
-        animation: "none",
-      }}
-    >
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="auth" />
-      <Stack.Screen name="workout" options={{ animation: "slide_from_bottom", animationDuration: 280 }} />
-      <Stack.Screen name="settings" options={{ presentation: "modal", animation: "slide_from_bottom", animationDuration: 280 }} />
-      <Stack.Screen name="exercise-detail/[exerciseId]" options={{ animation: "slide_from_right", animationDuration: 280 }} />
-      <Stack.Screen name="index" />
-    </Stack>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+          animation: "none",
+        }}
+      >
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="auth" />
+        <Stack.Screen name="workout" options={{ animation: "slide_from_bottom", animationDuration: 280 }} />
+        <Stack.Screen name="settings" options={{ animation: "slide_from_bottom", animationDuration: 280 }} />
+        <Stack.Screen name="exercise-detail/[exerciseId]" options={{ animation: "slide_from_right", animationDuration: 280 }} />
+        <Stack.Screen name="index" />
+      </Stack>
+    </View>
   );
 }
 

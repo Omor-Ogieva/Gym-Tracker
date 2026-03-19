@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -51,9 +51,24 @@ export default function ProfileScreen() {
   const [sessions, setSessions] = useState<SessionWithMeta[]>([]);
   const [stats, setStats] = useState({ totalWorkouts: 0, totalVolume: 0, totalExercises: 0, totalSets: 0 });
 
+  const hasDataRef = useRef(false);
+  const lastFetchedRef = useRef(0);
+
   const loadProfile = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true); else setLoading(true);
+    const now = Date.now();
+    const isStale = now - lastFetchedRef.current > 30_000;
+
+    // Skip if data is fresh and this isn't a manual pull-to-refresh
+    if (hasDataRef.current && !isStale && !isRefresh) return;
+
+    // Show spinner only on first load; subsequent refreshes are silent
+    if (isRefresh) {
+      setRefreshing(true);
+    } else if (!hasDataRef.current) {
+      setLoading(true);
+    }
     setError(null);
+
     try {
       const { data: { user } } = await db.getUser();
       if (!user) { setError("Not authenticated"); return; }
@@ -69,46 +84,42 @@ export default function ProfileScreen() {
       if (sessionsResult.error) { setError(sessionsResult.error.message); return; }
       const sessionsData = sessionsResult.data ?? [];
 
-      const exerciseResults = await Promise.all(
-        sessionsData.map((s: any) => db.getSessionExercises(s.session_id))
-      );
+      // Batch fetch — 1 request for all exercises, 1 request for all sets
+      const sessionIds = sessionsData.map((s: any) => s.session_id);
+      const { data: allExercisesFlat } = await db.getBatchSessionExercises(sessionIds);
 
-      const allExercises: { sessionIndex: number; exercise: any }[] = [];
-      exerciseResults.forEach((r, si) =>
-        (r.data ?? []).forEach((ex: any) => allExercises.push({ sessionIndex: si, exercise: ex }))
-      );
+      const exerciseIds = (allExercisesFlat ?? []).map((ex: any) => ex.session_exercise_id);
+      const { data: allSetsFlat } = await db.getBatchSessionExerciseSets(exerciseIds);
 
-      const setsResults = await Promise.all(
-        allExercises.map(({ exercise }) => db.getSessionExerciseSets(exercise.session_exercise_id))
-      );
+      // Build lookup maps for O(1) access
+      const exercisesBySession: Record<number, any[]> = {};
+      for (const ex of allExercisesFlat ?? []) {
+        (exercisesBySession[ex.session_id] ??= []).push(ex);
+      }
+      const setsByExercise: Record<number, any[]> = {};
+      for (const set of allSetsFlat ?? []) {
+        (setsByExercise[set.session_exercise_id] ??= []).push(set);
+      }
 
       let overallVolume = 0;
       let overallSets = 0;
       const uniqueExercises = new Set<string>();
-      const sessionVolumeMap: Record<number, number> = {};
-      const sessionExerciseCountMap: Record<number, number> = {};
-      const sessionExerciseNamesMap: Record<number, string[]> = {};
 
-      sessionsData.forEach((_: any, i: number) => {
-        sessionVolumeMap[i] = 0;
-        sessionExerciseCountMap[i] = (exerciseResults[i].data ?? []).length;
-        sessionExerciseNamesMap[i] = (exerciseResults[i].data ?? []).map((ex: any) => ex.exercise_name);
-      });
-
-      allExercises.forEach(({ sessionIndex, exercise }, idx) => {
-        uniqueExercises.add(exercise.exercise_id);
-        for (const set of setsResults[idx].data ?? []) {
-          if (set.completed) {
-            overallSets++;
-            if (set.weight != null && set.reps != null) {
-              sessionVolumeMap[sessionIndex] += set.weight * set.reps;
+      const enriched: SessionWithMeta[] = sessionsData.map((s: any) => {
+        const exs = exercisesBySession[s.session_id] ?? [];
+        let sessionVolume = 0;
+        for (const ex of exs) {
+          uniqueExercises.add(ex.exercise_id);
+          for (const set of setsByExercise[ex.session_exercise_id] ?? []) {
+            if (set.completed) {
+              overallSets++;
+              if (set.weight != null && set.reps != null) {
+                sessionVolume += set.weight * set.reps;
+              }
             }
           }
         }
-      });
-
-      const enriched: SessionWithMeta[] = sessionsData.map((s: any, i: number) => {
-        overallVolume += sessionVolumeMap[i];
+        overallVolume += sessionVolume;
         return {
           session_id: s.session_id,
           session_name: s.session_name,
@@ -116,9 +127,9 @@ export default function ProfileScreen() {
           start_time: s.start_time,
           end_time: s.end_time,
           notes: s.notes,
-          exerciseCount: sessionExerciseCountMap[i],
-          totalVolume: sessionVolumeMap[i],
-          exerciseNames: sessionExerciseNamesMap[i],
+          exerciseCount: exs.length,
+          totalVolume: sessionVolume,
+          exerciseNames: exs.map((ex: any) => ex.exercise_name),
         };
       });
 
@@ -126,6 +137,8 @@ export default function ProfileScreen() {
 
       setSessions(enriched);
       setStats({ totalWorkouts: enriched.length, totalVolume: overallVolume, totalExercises: uniqueExercises.size, totalSets: overallSets });
+      hasDataRef.current = true;
+      lastFetchedRef.current = Date.now();
     } catch (e: any) {
       setError(e.message ?? "Something went wrong");
     } finally {

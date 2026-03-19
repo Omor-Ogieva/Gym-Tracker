@@ -472,6 +472,31 @@ export const db = {
     return localDb.deleteCustomExercise(exerciseId);
   },
 
+  // Batch queries (profile performance — collapse N requests into 1)
+  getBatchSessionExercises: async (sessionIds: number[]) => {
+    if (sessionIds.length === 0) return { data: [], error: null };
+    if (isOnline) {
+      return supabase.from("session_exercises")
+        .select("*")
+        .in("session_id", sessionIds)
+        .order("exercise_order");
+    }
+    const results = await Promise.all(sessionIds.map(id => localDb.getSessionExercises(id)));
+    return { data: results.flatMap(r => r.data ?? []), error: null };
+  },
+
+  getBatchSessionExerciseSets: async (exerciseIds: number[]) => {
+    if (exerciseIds.length === 0) return { data: [], error: null };
+    if (isOnline) {
+      return supabase.from("session_exercise_sets")
+        .select("*")
+        .in("session_exercise_id", exerciseIds)
+        .order("set_number");
+    }
+    const results = await Promise.all(exerciseIds.map(id => localDb.getSessionExerciseSets(id)));
+    return { data: results.flatMap(r => r.data ?? []), error: null };
+  },
+
   // Exercise history for progression charts
   getExerciseHistory: async (exerciseId: string, userId: string) => {
     if (isOnline) {
