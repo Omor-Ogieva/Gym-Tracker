@@ -15,7 +15,13 @@ export type SessionWithMeta = {
   exerciseNames: string[];
 };
 
-const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions }: { sessions: SessionWithMeta[] }) {
+type Props = {
+  sessions: SessionWithMeta[];
+  onDelete?: (sessionId: number) => void;
+  onEdit?: (sessionId: number, name: string, notes: string | null) => void;
+};
+
+const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions, onDelete, onEdit }: Props) {
   const { colors } = useTheme();
 
   if (sessions.length === 0) {
@@ -36,6 +42,7 @@ const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions }: { sess
       {sessions.map((session) => (
         <WorkoutHistoryCard
           key={session.session_id}
+          session_id={session.session_id}
           sessionName={session.session_name}
           sessionDate={session.session_date}
           startTime={session.start_time}
@@ -44,6 +51,8 @@ const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions }: { sess
           totalVolume={session.totalVolume}
           notes={session.notes}
           exerciseNames={session.exerciseNames}
+          onDelete={onDelete}
+          onEdit={onEdit}
         />
       ))}
     </View>

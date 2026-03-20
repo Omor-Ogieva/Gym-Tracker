@@ -149,6 +149,16 @@ export default function ProfileScreen() {
 
   useFocusEffect(useCallback(() => { loadProfile(); }, [loadProfile]));
 
+  const handleDeleteSession = useCallback((sessionId: number) => {
+    setSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
+  }, []);
+
+  const handleEditSession = useCallback((sessionId: number, name: string, notes: string | null) => {
+    setSessions((prev) =>
+      prev.map((s) => s.session_id === sessionId ? { ...s, session_name: name, notes } : s)
+    );
+  }, []);
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const sunday = new Date(today);
@@ -276,7 +286,7 @@ export default function ProfileScreen() {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Workouts</Text>
       </View>
       <View style={{ marginHorizontal: 16 }}>
-        <WorkoutHistoryList sessions={sessions} />
+        <WorkoutHistoryList sessions={sessions} onDelete={handleDeleteSession} onEdit={handleEditSession} />
       </View>
     </ScrollView>
   );
