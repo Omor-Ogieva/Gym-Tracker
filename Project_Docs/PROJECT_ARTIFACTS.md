@@ -65,13 +65,16 @@
 | US-25 | As a user, I want to be notified when I set a new personal record (weight or volume) so that I can celebrate my progress. | High |
 | US-26 | As a user, I want to view a progression chart for a specific exercise so that I can see my strength improvement over time. | High |
 | US-27 | As a user, I want to see a weekly activity calendar showing which days I trained so that I can spot gaps in my routine. | Low |
+| US-28 | As a user, I want to edit the name and notes of a saved workout so that I can correct mistakes or add context after the fact. | Medium |
+| US-29 | As a user, I want to delete a saved workout from my history so that accidental or invalid sessions do not affect my stats. | Medium |
+| US-30 | As a user, I want to share a summary of a completed workout so that I can show my progress to others. | Low |
 
 ### Epic 5 — Settings & Personalization
 
 | ID | User Story | Priority |
 |----|-----------|----------|
-| US-28 | As a user, I want to switch between light and dark themes so that the app is comfortable to use in any lighting condition. | Medium |
-| US-29 | As a user, I want to choose between pounds (lbs) and kilograms (kg) so that weights are displayed in my preferred unit. | Medium |
+| US-31 | As a user, I want to switch between light and dark themes so that the app is comfortable to use in any lighting condition. | Medium |
+| US-32 | As a user, I want to choose between pounds (lbs) and kilograms (kg) so that weights are displayed in my preferred unit. | Medium |
 
 ---
 
@@ -91,6 +94,13 @@ Each exercise has a detail screen showing a line chart (via `react-native-gifted
 
 #### Feature: Rest Timer
 A configurable auto-starting countdown banner appears after each set is marked complete. Duration is user-configurable (60 s – 5 min with custom option). The banner is dismissible and plays haptic feedback on completion.
+
+#### Feature: Workout History Management
+Each completed workout card in the Profile tab exposes a contextual action sheet (3-dot menu) with three options: **Share** (exports a formatted text summary via the native Share API), **Edit** (opens a modal to rename the session and update notes, saved via `updateWorkoutSession`), and **Delete** (confirms via an alert, then calls `deleteWorkoutSession` and removes the card from local state without a re-fetch).
+
+#### Feature: Profile Performance Optimization
+
+Profile load time is reduced by collapsing a previously O(N×M) query waterfall into two batch queries (`getBatchSessionExercises`, `getBatchSessionExerciseSets`) using Supabase `.in()` filtering. Results are stored in in-memory lookup maps for O(1) access during stat aggregation. A stale-while-revalidate cache suppresses re-fetches for data fresher than 30 seconds and eliminates the loading spinner on tab re-focus.
 
 ---
 
@@ -137,7 +147,8 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | BL-22 | Exercise progression chart | DONE |
 | BL-23 | Weekly activity calendar | DONE |
 
-### Sprint 5 — Polish & Settings (DONE)
+### Sprint 5 — Polish, Settings & Quality (DONE)
+
 | ID | Item | Status |
 |----|------|--------|
 | BL-24 | Theme system (light / dark / system) | DONE |
@@ -145,17 +156,22 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | BL-26 | Profile editing (username, password) | DONE |
 | BL-27 | Settings screen (timer, theme, units, about, FAQ) | DONE |
 | BL-28 | Double-tap guard on submit actions | DONE |
+| BL-29 | Unit test suite — 4 suites, 48 tests, 100% coverage on utility layer | DONE |
+| BL-30 | Workout history edit / delete with confirmation and optimistic UI | DONE |
+| BL-31 | Workout history share via native Share API | DONE |
+| BL-32 | Profile batch queries and stale-while-revalidate caching | DONE |
+| BL-33 | Tab transition and screen animation flicker fixes | DONE |
 
 ### Backlog — Future Work
 | ID | Item | Status | Notes |
 |----|------|--------|-------|
-| BL-29 | Push notifications for rest timer completion | TODO | Requires `expo-notifications` |
-| BL-30 | Social sharing of workouts | TODO | |
-| BL-31 | Barcode/plate calculator | TODO | |
-| BL-32 | Body weight / measurement tracking | TODO | |
-| BL-33 | Unit test suite (Jest + React Native Testing Library) | TODO | No tests currently exist |
-| BL-34 | Sync local offline data to Supabase on reconnect | TODO | Current offline data is not persisted to cloud |
-| BL-35 | Routine reordering / editing after creation | TODO | Currently must delete and recreate |
+| BL-34 | Push notifications for rest timer completion | TODO | Requires `expo-notifications` |
+| BL-35 | Sync local offline data to Supabase on reconnect | TODO | Offline data is currently in-memory only (DEF-01) |
+| BL-36 | Routine reordering / editing after creation | TODO | Currently must delete and recreate (DEF-02) |
+| BL-37 | Barcode / plate calculator | TODO | |
+| BL-38 | Body weight / measurement tracking | TODO | |
+| BL-39 | Input validation and error messages on all forms | TODO | Auth, profile edit, session edit — currently minimal (DEF-05) |
+| BL-40 | Component-level and integration test coverage | TODO | Current tests cover utility layer only |
 
 ---
 
@@ -168,7 +184,7 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 │                  Expo (React Native)                 │
 │  ┌────────────┐  ┌──────────────┐  ┌─────────────┐   │
 │  │  Screens   │  │  Components  │  │  Utilities  │   │
-│  │ (Expo      │  │ExercisePicke │  │ useRestTimer│   │
+│  │ (Expo      │  │ExercisePicker│  │ useRestTimer│   │
 │  │  Router)   │  │ HistoryCard  │  │ prDetection │   │
 │  └─────┬──────┘  └──────┬───────┘  └──────┬──────┘   │
 │        │                │                 │          │
@@ -213,6 +229,8 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 4. **Theme via React Context:** A `ThemeContext` wraps the entire app. All components call `useTheme()` to get color tokens. This enables instant theme switching without re-mounting.
 
 5. **Debounced weight/reps inputs:** Updating Supabase on every keystroke would be wasteful. Inputs debounce 500 ms and also commit on blur, reducing unnecessary writes.
+
+6. **Batch queries for profile load:** The profile screen previously issued one DB request per session and one per exercise (N+M requests). This was refactored to two batch queries using Supabase `.in()` filtering, with in-memory lookup maps for O(1) stat aggregation. A 30-second stale-while-revalidate cache prevents redundant fetches on tab re-focus.
 
 ---
 
@@ -313,7 +331,7 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | `/(tabs)/index` | `app/(tabs)/index.tsx` | Workouts (Routines) | Tab | — |
 | `/(tabs)/profile` | `app/(tabs)/profile.tsx` | Profile & History | Tab | — |
 | `/workout` | `app/workout.tsx` | Active Workout | Stack (full-screen) | `sessionId: string` |
-| `/settings` | `app/settings.tsx` | Settings | Modal | — |
+| `/settings` | `app/settings.tsx` | Settings | Stack (slide from bottom) | — |
 | `/exercise-detail/[exerciseId]` | `app/exercise-detail/[exerciseId].tsx` | Exercise Progression | Stack | `exerciseId: string` |
 
 ### Database API Routes (db.tsx facade)
@@ -358,8 +376,10 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | `getWorkoutSessions(userId)` | GET | All completed sessions for user |
 | `getWorkoutSession(sessionId)` | GET | Single session by ID |
 | `getActiveSession(userId)` | GET | In-progress session (no `end_time`) |
-| `updateWorkoutSession(sessionId, updates)` | PATCH | Update session fields |
-| `deleteWorkoutSession(sessionId)` | DELETE | Discard a session |
+| `updateWorkoutSession(sessionId, updates)` | PATCH | Update session name or notes |
+| `deleteWorkoutSession(sessionId)` | DELETE | Discard a session and all child records |
+| `getBatchSessionExercises(sessionIds)` | GET | All exercises for a list of sessions in one request |
+| `getBatchSessionExerciseSets(exerciseIds)` | GET | All sets for a list of exercises in one request |
 
 #### Session Exercises & Sets
 | Function | Operation | Description |
@@ -391,16 +411,50 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 
 ## 6. Test Plan & Evidence
 
-> **Note:** As of the current sprint, the app does not have an automated test suite (no Jest or React Native Testing Library setup). All testing below is manual.
-
 ### Test Strategy
 
 | Test Type | Approach | Status |
 |-----------|----------|--------|
-| Unit Tests | Not yet implemented | Planned (BL-33) |
+| Unit Tests | Jest + `@testing-library/react-native` | **Active — 48 tests, 100% coverage on utility layer** |
 | Integration Tests | Manual, via app | Ongoing |
 | End-to-End Tests | Manual, via device/emulator | Ongoing |
 | Static Analysis | TypeScript (`tsc`) + ESLint | Active |
+
+---
+
+### Automated Unit Tests
+
+Tests live in `gym-tracker/__tests__/` and run with `npm test`.
+
+#### Coverage Summary
+
+| File | Statements | Branches | Functions | Lines |
+| --- | --- | --- | --- | --- |
+| `prDetection.ts` | 100% | 100% | 100% | 100% |
+| `pressGuard.ts` | 100% | 100% | 100% | 100% |
+| `units.ts` | 100% | 100% | 100% | 100% |
+| `useRestTimer.ts` | 100% | 100% | 100% | 100% |
+| **All files** | **100%** | **100%** | **100%** | **100%** |
+
+Total: 4 suites, 48 tests, 0 failures.
+
+#### Test File Descriptions
+
+| File | Unit Under Test | Tests | Key Scenarios Covered |
+|------|----------------|-------|-----------------------|
+| `prDetection.test.ts` | `detectPersonalRecords()` | 14 | First session sets PR, beats existing max weight, beats max volume, no PR when lighter, multiple exercises, empty input |
+| `pressGuard.test.ts` | `useGuardedPress()` | 7 | First press fires, double-tap blocked, second press allowed after delay, partial delay still blocked, custom delay, async function support |
+| `units.test.ts` | `toDisplay()`, `fromDisplay()`, `convertWeight()` | 13 | lbs identity, kg↔lbs conversion, null passthrough, rounding, zero values |
+| `useRestTimer.test.ts` | `useRestTimer()` hook | 14 | Initial state, start/pause/reset, AsyncStorage persistence, countdown tick, completion callback, custom duration |
+
+To run tests with coverage:
+
+```bash
+cd gym-tracker
+npm test -- --coverage
+```
+
+HTML report is generated at `coverage/lcov-report/index.html`.
 
 ---
 
@@ -500,17 +554,38 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | 2 | Verify session shows correct date, duration, exercises | Metadata matches session data | Pass |
 | 3 | Verify stats (total workouts, volume) match history | Counts are accurate | Pass |
 
+#### TC-13: Workout History — Edit
+| Step | Action | Expected Result | Pass/Fail |
+|------|--------|-----------------|-----------|
+| 1 | Tap the 3-dot menu on any workout card | Action sheet slides up with Share / Edit / Delete | Pass |
+| 2 | Tap "Edit" | Modal appears pre-filled with current name and notes | Pass |
+| 3 | Change the session name, tap "Save" | Card updates in place without a full reload | Pass |
+| 4 | Reopen app and navigate to Profile | Edited name persists from DB | Pass |
+
+#### TC-14: Workout History — Delete
+| Step | Action | Expected Result | Pass/Fail |
+|------|--------|-----------------|-----------|
+| 1 | Tap the 3-dot menu → "Delete" | Confirmation alert shown | Pass |
+| 2 | Tap "Delete" in alert | Card removed from list; profile stats update | Pass |
+| 3 | Tap "Cancel" in alert | Card remains; no change | Pass |
+
+#### TC-15: Workout History — Share
+| Step | Action | Expected Result | Pass/Fail |
+|------|--------|-----------------|-----------|
+| 1 | Tap the 3-dot menu → "Share" | Native share sheet opens | Pass |
+| 2 | Verify share text includes name, date, duration, exercises | Formatted summary is correct | Pass |
+
 ---
 
 ### Static Analysis Evidence
 
-TypeScript strict mode is enabled (`"strict": true` in `tsconfig.json`). All files compile without type errors as verified by:
+TypeScript strict mode is enabled (`"strict": true` in `tsconfig.json`). All files compile without type errors:
 
 ```bash
 npx tsc --noEmit
 ```
 
-ESLint is configured via `eslint.config.js` using `eslint-config-expo`. Linting runs without errors on all source files:
+ESLint is configured via `eslint.config.js` using `eslint-config-expo`:
 
 ```bash
 npx expo lint
@@ -522,10 +597,10 @@ npx expo lint
 
 | ID | Description | Severity | Status |
 |----|-------------|----------|--------|
-| DEF-01 | Offline data is lost when the app is fully closed (in-memory only) | Medium | Open |
-| DEF-02 | Routine exercises cannot be reordered after creation | Low | Open |
-| DEF-03 | No automated test coverage | High | Planned (BL-33) |
+| DEF-01 | Offline data is lost when the app is fully closed (in-memory only) | Medium | Open — tracked as BL-35 |
+| DEF-02 | Routine exercises cannot be reordered after creation | Low | Open — tracked as BL-36 |
+| DEF-03 | No automated test coverage | High | **Closed** — 48 unit tests added in Sprint 5 (commit `40f71f8`) |
 | DEF-04 | Password change and account deletion require internet connection | Low | By design |
+| DEF-05 | Forms have minimal client-side input validation | Medium | Open — tracked as BL-39 |
 
 ---
-
