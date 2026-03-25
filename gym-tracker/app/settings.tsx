@@ -301,14 +301,12 @@ function ContentModal({ visible, onClose, title, sections }: { visible: boolean;
   const { colors } = useTheme();
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }} onPress={onClose}>
-        <Pressable
-          style={{ backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, maxHeight: "80%", elevation: 8 }}
-          onPress={() => {}}
-        >
+      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
+        <Pressable style={{ ...StyleSheet.absoluteFillObject }} onPress={onClose} />
+        <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, maxHeight: "80%", elevation: 8 }}>
           <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: "center", marginBottom: 20 }} />
           <Text style={{ fontSize: 20, fontWeight: "700", color: colors.text, marginBottom: 20 }}>{title}</Text>
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} style={{ flexShrink: 1 }}>
             {sections.map((s, i) => (
               <View key={i} style={{ marginBottom: 16 }}>
                 {s.heading && <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text, marginBottom: 6 }}>{s.heading}</Text>}
@@ -320,8 +318,8 @@ function ContentModal({ visible, onClose, title, sections }: { visible: boolean;
           <Pressable style={{ paddingVertical: 14, borderRadius: 12, backgroundColor: colors.primary, alignItems: "center", marginTop: 8 }} onPress={onClose}>
             <Text style={{ fontSize: 16, fontWeight: "700", color: "#fff" }}>Got it</Text>
           </Pressable>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

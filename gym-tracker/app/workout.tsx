@@ -327,9 +327,6 @@ export default function WorkoutScreen() {
           {session.session_name}
         </Text>
         <View style={styles.headerRight}>
-          <View style={[styles.timerPill, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.timerText, { color: colors.primary }]}>{formatTime(elapsed)}</Text>
-          </View>
           <Pressable style={[styles.finishPill, { backgroundColor: colors.primary }]} onPress={finishWorkout}>
             <Text style={styles.finishPillText}>Finish</Text>
           </Pressable>
