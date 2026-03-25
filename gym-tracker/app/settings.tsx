@@ -8,6 +8,7 @@ import { db } from "./backend/db";
 import { useTheme } from "./theme/ThemeContext";
 import { useUnits, UnitSystem } from "./utils/units";
 import { useRestTimer } from "./utils/useRestTimer";
+import { requestNotificationPermissions } from "./utils/notifications";
 
 const NOTIF_KEY = "@gym_tracker_notifications";
 
@@ -378,7 +379,18 @@ export default function SettingsScreen() {
     });
   }, []);
 
-  const toggleNotifications = (val: boolean) => {
+  const toggleNotifications = async (val: boolean) => {
+    if (val) {
+      const granted = await requestNotificationPermissions();
+      if (!granted) {
+        Alert.alert(
+          "Permission Required",
+          "Enable notifications in your device settings to receive rest timer alerts.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+    }
     setNotificationsEnabled(val);
     AsyncStorage.setItem(NOTIF_KEY, String(val));
   };

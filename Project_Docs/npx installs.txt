@@ -1,2 +1,20 @@
+# Expo SDK packages (version-locked to current SDK)
 npx expo install expo-linear-gradient
+npx expo install expo-notifications expo-device
+npx expo install expo-haptics
+npx expo install expo-image
+npx expo install @react-native-async-storage/async-storage
+npx expo install react-native-svg
 
+# Third-party packages
+npm install @supabase/supabase-js
+npm install react-native-gifted-charts
+
+# Testing (dev dependencies)
+npm install --save-dev jest jest-expo @testing-library/react-native react-test-renderer
+
+# EAS / Development Build
+npm install -g eas-cli
+eas login
+eas build:configure
+eas build --profile development --platform android

@@ -12,6 +12,8 @@ import ExercisePicker from "./components/ExercisePicker";
 import RestTimerBanner from "./components/RestTimerBanner";
 import { useRestTimer } from "./utils/useRestTimer";
 import { detectPRs } from "./utils/prDetection";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { scheduleRestDoneNotification, cancelRestDoneNotification } from "./utils/notifications";
 import { useUnits } from "./utils/units";
 
 export default function WorkoutScreen() {
@@ -37,6 +39,18 @@ export default function WorkoutScreen() {
   const [prevSets, setPrevSets] = useState<Record<string, any[]>>({});
 
   const restTimer = useRestTimer();
+
+  const startRestTimer = useCallback(() => {
+    restTimer.start();
+    AsyncStorage.getItem("@gym_tracker_notifications").then((val) => {
+      if (val === "true") scheduleRestDoneNotification(restTimer.duration);
+    });
+  }, [restTimer]);
+
+  const skipRestTimer = useCallback(() => {
+    restTimer.skip();
+    cancelRestDoneNotification();
+  }, [restTimer]);
 
   const totalVolume = useMemo(() => {
     let total = 0;
@@ -391,7 +405,7 @@ export default function WorkoutScreen() {
                   onUpdate={updateSet}
                   onSetNumberPress={openSetOptions}
                   prevSet={prevSets[ex.exercise_id]?.[idx]}
-                  onComplete={() => restTimer.start()}
+                  onComplete={startRestTimer}
                 />
               ))}
 
@@ -437,7 +451,7 @@ export default function WorkoutScreen() {
 
       <RestTimerBanner
         remaining={restTimer.remaining}
-        onSkip={restTimer.skip}
+        onSkip={skipRestTimer}
         onAddTime={restTimer.addTime}
       />
 
