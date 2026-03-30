@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { db } from "./backend/db";
 import { ThemeProvider, useTheme } from "./theme/ThemeContext";
+import { useSyncManager } from "./utils/useSyncManager";
 
 function RootNav() {
   const [session, setSession] = useState<any>(null);
@@ -10,6 +11,8 @@ function RootNav() {
   const router = useRouter();
   const segments = useSegments();
   const { colors } = useTheme();
+  const userId = session?.user?.id ?? null;
+  const { isSyncing, lastSyncedCount } = useSyncManager(userId);
 
   useEffect(() => {
     db.getSession().then((result: any) => {
@@ -48,6 +51,19 @@ function RootNav() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {isSyncing && (
+        <View style={{ backgroundColor: colors.primary, paddingVertical: 6, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <ActivityIndicator size="small" color="#fff" />
+          <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>Syncing offline workouts…</Text>
+        </View>
+      )}
+      {!isSyncing && lastSyncedCount > 0 && (
+        <View style={{ backgroundColor: colors.success, paddingVertical: 6, paddingHorizontal: 16 }}>
+          <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>
+            {lastSyncedCount} workout{lastSyncedCount > 1 ? "s" : ""} synced!
+          </Text>
+        </View>
+      )}
       <Stack
         screenOptions={{
           headerShown: false,
