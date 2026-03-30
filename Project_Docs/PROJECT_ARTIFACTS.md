@@ -102,6 +102,10 @@ Each completed workout card in the Profile tab exposes a contextual action sheet
 
 Profile load time is reduced by collapsing a previously O(N×M) query waterfall into two batch queries (`getBatchSessionExercises`, `getBatchSessionExerciseSets`) using Supabase `.in()` filtering. Results are stored in in-memory lookup maps for O(1) access during stat aggregation. A stale-while-revalidate cache suppresses re-fetches for data fresher than 30 seconds and eliminates the loading spinner on tab re-focus.
 
+#### Feature: Offline Session Sync on Reconnect
+
+When a workout is completed while offline, the full session tree (session row + exercises + sets) is serialised into an AsyncStorage queue (`offlineQueue.ts`). A `networkStatus` singleton (`networkStatus.ts`) tracks real-time connectivity via `@react-native-community/netinfo`. The `useSyncManager` hook (mounted in `_layout.tsx`) triggers a sync run on app startup (if pending items exist) and on every offline → online network transition. During sync, each queued session is inserted into Supabase with local-to-remote ID remapping for exercise IDs, then removed from the queue on success. A banner in the root layout displays sync progress and a success count on completion.
+
 ---
 
 ## 2. Backlog
@@ -166,12 +170,12 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | ID | Item | Status | Notes |
 |----|------|--------|-------|
 | BL-34 | Push notifications for rest timer completion | TODO | Requires `expo-notifications` |
-| BL-35 | Sync local offline data to Supabase on reconnect | TODO | Offline data is currently in-memory only (DEF-01) |
+| BL-35 | Sync local offline data to Supabase on reconnect | DONE | `offlineQueue.ts`, `networkStatus.ts`, `useSyncManager` hook; closes DEF-01 |
 | BL-36 | Routine reordering / editing after creation | TODO | Currently must delete and recreate (DEF-02) |
 | BL-37 | Barcode / plate calculator | TODO | |
 | BL-38 | Body weight / measurement tracking | TODO | |
 | BL-39 | Input validation and error messages on all forms | TODO | Auth, profile edit, session edit — currently minimal (DEF-05) |
-| BL-40 | Component-level and integration test coverage | TODO | Current tests cover utility layer only |
+| BL-40 | Component-level and integration test coverage | TODO | Utility + hook layer now covered; component/screen tests remain |
 
 ---
 
@@ -211,11 +215,13 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 |-------|-----------|----------------|
 | **Screens** | Expo Router (`/app/*.tsx`) | Page-level components, navigation |
 | **Components** | React Native | Reusable UI elements |
-| **Context / Hooks** | React Context + Custom Hooks | Theme, units, rest timer, auth state |
+| **Context / Hooks** | React Context + Custom Hooks | Theme, units, rest timer, auth state, sync manager |
 | **DB Facade** | `app/backend/db.tsx` | Routes all DB calls to Supabase or local store |
 | **Supabase Client** | `@supabase/supabase-js` | Cloud PostgreSQL, Auth |
 | **Local Store** | `app/backend/localDb.tsx` | In-memory JS objects (offline fallback) |
-| **Persistent Storage** | AsyncStorage | User preferences, auth token caching |
+| **Offline Queue** | `app/backend/offlineQueue.ts` | AsyncStorage-persisted queue of completed offline sessions |
+| **Network Status** | `app/backend/networkStatus.ts` | Runtime connectivity singleton via `@react-native-community/netinfo` |
+| **Persistent Storage** | AsyncStorage | User preferences, auth token, offline session queue |
 | **Exercise Library** | `assets/data/exercises.json` | 500+ static exercise records |
 
 ### Key Design Decisions
@@ -400,6 +406,13 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | `getExerciseHistory(exerciseId, userId)` | GET | All session data for one exercise |
 | `getPreviousSessionSets(exerciseId, userId, excludeSessionId)` | GET | Last session's sets (hint display) |
 
+#### Offline Sync
+
+| Function                       | Operation | Description                                                                                      |
+|--------------------------------|-----------|--------------------------------------------------------------------------------------------------|
+| `syncPendingSessions(userId)`  | POST      | Insert all queued offline sessions into Supabase with ID remapping; returns `{ synced, errors }` |
+| `getPendingSessionCount()`     | GET       | Returns the number of sessions currently in the offline queue                                    |
+
 #### Custom Exercises
 | Function | Operation | Description |
 |----------|-----------|-------------|
@@ -415,7 +428,7 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 
 | Test Type | Approach | Status |
 |-----------|----------|--------|
-| Unit Tests | Jest + `@testing-library/react-native` | **Active — 48 tests, 100% coverage on utility layer** |
+| Unit Tests | Jest + `@testing-library/react-native` | **Active — 76 tests across 6 suites** |
 | Integration Tests | Manual, via app | Ongoing |
 | End-to-End Tests | Manual, via device/emulator | Ongoing |
 | Static Analysis | TypeScript (`tsc`) + ESLint | Active |
@@ -434,9 +447,11 @@ Tests live in `gym-tracker/__tests__/` and run with `npm test`.
 | `pressGuard.ts` | 100% | 100% | 100% | 100% |
 | `units.ts` | 100% | 100% | 100% | 100% |
 | `useRestTimer.ts` | 100% | 100% | 100% | 100% |
+| `offlineQueue.ts` | 100% | 100% | 100% | 100% |
+| `useSyncManager.ts` | 100% | 100% | 100% | 100% |
 | **All files** | **100%** | **100%** | **100%** | **100%** |
 
-Total: 4 suites, 48 tests, 0 failures.
+Total: 6 suites, 76 tests, 0 failures.
 
 #### Test File Descriptions
 
@@ -446,6 +461,8 @@ Total: 4 suites, 48 tests, 0 failures.
 | `pressGuard.test.ts` | `useGuardedPress()` | 7 | First press fires, double-tap blocked, second press allowed after delay, partial delay still blocked, custom delay, async function support |
 | `units.test.ts` | `toDisplay()`, `fromDisplay()`, `convertWeight()` | 13 | lbs identity, kg↔lbs conversion, null passthrough, rounding, zero values |
 | `useRestTimer.test.ts` | `useRestTimer()` hook | 14 | Initial state, start/pause/reset, AsyncStorage persistence, countdown tick, completion callback, custom duration |
+| `offlineQueue.test.ts` | `offlineQueue.ts` functions | 17 | Empty queue, enqueue/append, exercise+set persistence, count tracking, index removal, key deletion on empty, session origin round-trip, overwrite, clear |
+| `useSyncManager.test.ts` | `useSyncManager()` hook | 11 | No-op when userId null, skip when 0 pending, skip when disconnected, skip when unreachable, sync on mount when pending+connected, reconnect trigger (false→true), no-op on true→true, no-op on true→false, zero synced count, event listener cleanup |
 
 To run tests with coverage:
 
@@ -482,6 +499,16 @@ HTML report is generated at `coverage/lcov-report/index.html`.
 | 2 | Create a routine while offline | Routine appears in list | Pass |
 | 3 | Start and complete a workout while offline | Session saved to local store | Pass |
 | 4 | Re-enable network, reopen app | App re-enters online mode | Pass |
+
+#### TC-16: Offline Session Sync on Reconnect
+
+| Step | Action | Expected Result | Pass/Fail |
+|------|--------|-----------------|-----------|
+| 1 | Disable network, complete a full workout | Session queued in AsyncStorage | Pass |
+| 2 | Re-enable network while app is open | "Syncing offline workouts…" banner appears | Pass |
+| 3 | Wait for sync to complete | "N workout(s) synced!" banner shown briefly | Pass |
+| 4 | Navigate to Profile tab | Synced workout appears in history | Pass |
+| 5 | Close and reopen app with pending sessions | Startup sync runs automatically | Pass |
 
 #### TC-04: Create Routine
 | Step | Action | Expected Result | Pass/Fail |
@@ -597,7 +624,7 @@ npx expo lint
 
 | ID | Description | Severity | Status |
 |----|-------------|----------|--------|
-| DEF-01 | Offline data is lost when the app is fully closed (in-memory only) | Medium | Open — tracked as BL-35 |
+| DEF-01 | Offline data is lost when the app is fully closed (in-memory only) | Medium | **Closed** — BL-35 implemented offline queue + sync on reconnect |
 | DEF-02 | Routine exercises cannot be reordered after creation | Low | Open — tracked as BL-36 |
 | DEF-03 | No automated test coverage | High | **Closed** — 48 unit tests added in Sprint 5 (commit `40f71f8`) |
 | DEF-04 | Password change and account deletion require internet connection | Low | By design |
