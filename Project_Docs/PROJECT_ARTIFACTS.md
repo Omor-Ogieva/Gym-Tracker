@@ -40,6 +40,9 @@
 | US-10 | As a user, I want to mark specific sets as warmup sets so that they are tracked separately from working sets. | Medium |
 | US-11 | As a user, I want to delete a routine I no longer use so that my routine list stays clean. | Medium |
 | US-12 | As a user, I want to create my own custom exercises so that I can track movements not in the built-in library. | Medium |
+| US-33 | As a user, I want to edit the name and description of an existing routine so that I can correct mistakes without deleting and recreating it. | Medium |
+| US-34 | As a user, I want to reorder my routines so that the ones I use most often appear at the top of my list. | Low |
+| US-35 | As a user, I want to replace an exercise in a routine or active workout with a different one so that I can swap movements without losing the rest of the plan. | Medium |
 
 ### Epic 3 — Workout Logging
 
@@ -98,6 +101,18 @@ A configurable auto-starting countdown banner appears after each set is marked c
 #### Feature: Workout History Management
 Each completed workout card in the Profile tab exposes a contextual action sheet (3-dot menu) with three options: **Share** (exports a formatted text summary via the native Share API), **Edit** (opens a modal to rename the session and update notes, saved via `updateWorkoutSession`), and **Delete** (confirms via an alert, then calls `deleteWorkoutSession` and removes the card from local state without a re-fetch).
 
+#### Feature: Exercise Options Menu (3-dot) in Active Workout & Routine Editor
+
+Each exercise card in both the active workout screen and the routine editor exposes an ellipsis (`···`) icon. Tapping it opens a bottom sheet with two options: **Replace Exercise** (opens the exercise picker in replace mode — the record is updated in-place via `updateSessionExercise` / `updateRoutineExercise`, preserving all existing sets) and **Remove Exercise** (deletes the exercise and its sets with an optimistic state update).
+
+#### Feature: Routine Options Menu (3-dot) on Routine List
+
+Each routine card on the Workouts tab exposes an ellipsis (`···`) icon that opens a bottom sheet with four actions: **Edit Routine** (opens a centered modal pre-filled with name and description, saved via `updateRoutine`), **Move Up** / **Move Down** (swaps the routine's position in the list and batch-persists `routine_order` to the DB; boundaries are visually dimmed), and **Delete Routine** (delegates to the existing `ConfirmModal` + `deleteRoutine` flow).
+
+#### Feature: Active Workout Finish Fix
+
+When "Finish" is tapped, the local session state is immediately updated with `end_time` before `router.back()` is called. This prevents the `beforeRemove` navigation guard (which intercepts back-swipes on in-progress workouts) from firing incorrectly and re-populating the minimized workout bar after the session has ended.
+
 #### Feature: Profile Performance Optimization
 
 Profile load time is reduced by collapsing a previously O(N×M) query waterfall into two batch queries (`getBatchSessionExercises`, `getBatchSessionExerciseSets`) using Supabase `.in()` filtering. Results are stored in in-memory lookup maps for O(1) access during stat aggregation. A stale-while-revalidate cache suppresses re-fetches for data fresher than 30 seconds and eliminates the loading spinner on tab re-focus.
@@ -129,6 +144,11 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | BL-08 | Add/remove exercises and sets to a routine | DONE |
 | BL-09 | Target weight, reps, warmup flag per set | DONE |
 | BL-10 | Custom exercise creation (name, muscle, equipment) | DONE |
+| BL-41 | Routine 3-dot menu: edit name/description inline | DONE |
+| BL-42 | Routine 3-dot menu: move up / move down reordering | DONE |
+| BL-43 | Routine 3-dot menu: delete routine with confirmation | DONE |
+| BL-44 | Exercise 3-dot menu in routine editor: replace exercise in-place | DONE |
+| BL-45 | Exercise 3-dot menu in routine editor: remove exercise | DONE |
 
 ### Sprint 3 — Live Workout Logging (DONE)
 | ID | Item | Status |
@@ -140,6 +160,9 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | BL-15 | Workout timer (elapsed duration) | DONE |
 | BL-16 | Finish workout / discard workout flows | DONE |
 | BL-17 | Rest timer banner (configurable, auto-start) | DONE |
+| BL-46 | Exercise 3-dot menu in active workout: replace exercise in-place | DONE |
+| BL-47 | Exercise 3-dot menu in active workout: remove exercise | DONE |
+| BL-48 | Fix: finishing workout incorrectly re-showed minimized workout bar | DONE |
 
 ### Sprint 4 — Progress Tracking (DONE)
 | ID | Item | Status |
@@ -171,7 +194,7 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 |----|------|--------|-------|
 | BL-34 | Push notifications for rest timer completion | TODO | Requires `expo-notifications` |
 | BL-35 | Sync local offline data to Supabase on reconnect | DONE | `offlineQueue.ts`, `networkStatus.ts`, `useSyncManager` hook; closes DEF-01 |
-| BL-36 | Routine reordering / editing after creation | TODO | Currently must delete and recreate (DEF-02) |
+| BL-36 | Routine reordering / editing after creation | DONE | 3-dot menu on each routine card — edit, move up/down, delete (BL-41–43); closes DEF-02 |
 | BL-37 | Barcode / plate calculator | TODO | |
 | BL-38 | Body weight / measurement tracking | TODO | |
 | BL-39 | Input validation and error messages on all forms | TODO | Auth, profile edit, session edit — currently minimal (DEF-05) |
@@ -364,9 +387,11 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 |----------|-----------|-------------|
 | `getRoutines()` | GET | List all routines for current user |
 | `insertRoutine(routine)` | POST | Create a new routine |
+| `updateRoutine(routineId, updates)` | PATCH | Edit routine name, description, or order |
 | `deleteRoutine(routineId)` | DELETE | Remove routine and cascade |
 | `getRoutineExercises(routineId)` | GET | Ordered exercises in a routine |
 | `insertRoutineExercise(exercise)` | POST | Add exercise to routine |
+| `updateRoutineExercise(routineExerciseId, updates)` | PATCH | Replace exercise identity (id + name) in-place |
 | `deleteRoutineExercise(routineExerciseId)` | DELETE | Remove exercise from routine |
 | `getRoutineExerciseSets(routineExerciseId)` | GET | Template sets for an exercise |
 | `insertRoutineExerciseSet(set)` | POST | Add a set to a routine exercise |
@@ -392,6 +417,7 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 |----------|-----------|-------------|
 | `getSessionExercises(sessionId)` | GET | Exercises in a live session |
 | `insertSessionExercise(exercise)` | POST | Add exercise mid-workout |
+| `updateSessionExercise(sessionExerciseId, updates)` | PATCH | Replace exercise identity or update notes in-place |
 | `deleteSessionExercise(sessionExerciseId)` | DELETE | Remove exercise from session |
 | `getSessionExerciseSets(sessionExerciseId)` | GET | Sets for one exercise |
 | `insertSessionExerciseSet(set)` | POST | Add a new set |
@@ -602,6 +628,58 @@ HTML report is generated at `coverage/lcov-report/index.html`.
 | 1 | Tap the 3-dot menu → "Share" | Native share sheet opens | Pass |
 | 2 | Verify share text includes name, date, duration, exercises | Formatted summary is correct | Pass |
 
+#### TC-17: Routine 3-dot Menu — Edit
+
+| Step | Action | Expected Result | Pass/Fail |
+|------|--------|-----------------|-----------|
+| 1 | Tap the `···` icon on a routine card | Bottom sheet slides up with Edit / Move Up / Move Down / Delete | Pass |
+| 2 | Tap "Edit Routine" | Centered modal appears pre-filled with current name and description | Pass |
+| 3 | Change the name, tap "Save" | Card updates in place; modal closes | Pass |
+| 4 | Reopen app | Edited name persists from DB | Pass |
+
+#### TC-18: Routine 3-dot Menu — Reorder
+
+| Step | Action | Expected Result | Pass/Fail |
+|------|--------|-----------------|-----------|
+| 1 | Open 3-dot menu on the first routine in the list | "Move Up" option is visually dimmed | Pass |
+| 2 | Tap "Move Down" | Routine swaps with the one below; sheet closes | Pass |
+| 3 | Open 3-dot menu on the last routine | "Move Down" option is visually dimmed | Pass |
+| 4 | Tap "Move Up" | Routine swaps with the one above | Pass |
+| 5 | Reopen app | New order persists from DB | Pass |
+
+#### TC-19: Routine 3-dot Menu — Delete
+
+| Step | Action | Expected Result | Pass/Fail |
+|------|--------|-----------------|-----------|
+| 1 | Tap "Delete Routine" in the 3-dot sheet | ConfirmModal appears with routine name | Pass |
+| 2 | Tap "Delete" | Card removed from list; sheet closes | Pass |
+| 3 | Tap "Cancel" | Card remains; no change | Pass |
+
+#### TC-20: Exercise 3-dot Menu — Replace Exercise
+
+| Step | Action | Expected Result | Pass/Fail |
+|------|--------|-----------------|-----------|
+| 1 | Open 3-dot menu on an exercise in the routine editor | Bottom sheet shows "Replace Exercise" and "Remove Exercise" | Pass |
+| 2 | Tap "Replace Exercise" | Exercise picker opens | Pass |
+| 3 | Select a different exercise | Exercise name updates on the card; existing sets are preserved | Pass |
+| 4 | Repeat in the active workout screen | Same behaviour; sets retained | Pass |
+
+#### TC-21: Exercise 3-dot Menu — Remove Exercise
+
+| Step | Action | Expected Result | Pass/Fail |
+|------|--------|-----------------|-----------|
+| 1 | Open 3-dot menu on an exercise in the routine editor | Bottom sheet appears | Pass |
+| 2 | Tap "Remove Exercise" | Exercise and all its sets removed from the screen immediately | Pass |
+| 3 | Repeat in the active workout screen | Same behaviour; session state updates correctly | Pass |
+
+#### TC-22: Finish Workout — Minimized Bar Dismissed
+
+| Step | Action | Expected Result | Pass/Fail |
+|------|--------|-----------------|-----------|
+| 1 | Start a workout from a routine | Active workout screen opens; minimized bar registers the session | Pass |
+| 2 | Log at least one set, tap "Finish Workout" | Session saved; active workout screen closes | Pass |
+| 3 | Verify minimized workout bar is no longer visible | Bar is dismissed; navigates to previous screen cleanly | Pass |
+
 ---
 
 ### Static Analysis Evidence
@@ -625,7 +703,7 @@ npx expo lint
 | ID | Description | Severity | Status |
 |----|-------------|----------|--------|
 | DEF-01 | Offline data is lost when the app is fully closed (in-memory only) | Medium | **Closed** — BL-35 implemented offline queue + sync on reconnect |
-| DEF-02 | Routine exercises cannot be reordered after creation | Low | Open — tracked as BL-36 |
+| DEF-02 | Routine exercises cannot be reordered after creation | Low | **Closed** — BL-36 implemented routine 3-dot menu with move up/down and edit |
 | DEF-03 | No automated test coverage | High | **Closed** — 48 unit tests added in Sprint 5 (commit `40f71f8`) |
 | DEF-04 | Password change and account deletion require internet connection | Low | By design |
 | DEF-05 | Forms have minimal client-side input validation | Medium | Open — tracked as BL-39 |

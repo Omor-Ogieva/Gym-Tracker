@@ -157,11 +157,11 @@ export default function ProfileScreen() {
     setSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
   }, []);
 
-  const handleEditSession = useCallback((sessionId: number, name: string, notes: string | null) => {
-    setSessions((prev) =>
-      prev.map((s) => s.session_id === sessionId ? { ...s, session_name: name, notes } : s)
-    );
-  }, []);
+  const handleEditWorkout = useCallback((sessionId: number) => {
+    // Invalidate cache so the profile re-fetches fresh data on focus return
+    hasDataRef.current = false;
+    router.push(`/workout-edit/${sessionId}` as any);
+  }, [router]);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -293,7 +293,7 @@ export default function ProfileScreen() {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Workouts</Text>
       </View>
       <View style={{ marginHorizontal: 16 }}>
-        <WorkoutHistoryList sessions={sessions} onDelete={handleDeleteSession} onEdit={handleEditSession} />
+        <WorkoutHistoryList sessions={sessions} onDelete={handleDeleteSession} onEditWorkout={handleEditWorkout} />
       </View>
     </ScrollView>
   );

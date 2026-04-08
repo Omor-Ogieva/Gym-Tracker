@@ -19,10 +19,10 @@ export type SessionWithMeta = {
 type Props = {
   sessions: SessionWithMeta[];
   onDelete?: (sessionId: number) => void;
-  onEdit?: (sessionId: number, name: string, notes: string | null) => void;
+  onEditWorkout?: (sessionId: number) => void;
 };
 
-const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions, onDelete, onEdit }: Props) {
+const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions, onDelete, onEditWorkout }: Props) {
   const { colors } = useTheme();
 
   if (sessions.length === 0) {
@@ -53,7 +53,7 @@ const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions, onDelete
           notes={session.notes}
           exerciseNames={session.exerciseNames}
           onDelete={onDelete}
-          onEdit={onEdit}
+          onEditWorkout={onEditWorkout}
         />
       ))}
     </View>

@@ -343,7 +343,7 @@ export const localDb = {
   },
 
   // Update session notes
-  updateWorkoutSession: async (sessionId: number, updates: { notes?: string; session_name?: string }) => {
+  updateWorkoutSession: async (sessionId: number, updates: { notes?: string | null; session_name?: string }) => {
     localWorkoutSessions = localWorkoutSessions.map((s) =>
       s.session_id === sessionId ? { ...s, ...updates } : s
     );

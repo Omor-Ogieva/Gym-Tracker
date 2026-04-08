@@ -316,7 +316,7 @@ export const db = {
     return localDb.getActiveSession(userId);
   },
 
-  updateWorkoutSession: async (sessionId: number, updates: { notes?: string; session_name?: string }) => {
+  updateWorkoutSession: async (sessionId: number, updates: { notes?: string | null; session_name?: string }) => {
     if (useSupabase()) {
       return supabase.from("workout_sessions")
         .update(updates)
@@ -387,7 +387,7 @@ export const db = {
     return localDb.getSessionExerciseSets(sessionExerciseId);
   },
 
-  insertSessionExerciseSet: async (set: { session_exercise_id: number; set_number: number; weight: number | null; reps: number | null; is_warmup: boolean }) => {
+  insertSessionExerciseSet: async (set: { session_exercise_id: number; set_number: number; weight: number | null; reps: number | null; is_warmup: boolean; completed?: boolean }) => {
     if (useSupabase()) {
       return supabase.from("session_exercise_sets").insert(set).select().single();
     }
