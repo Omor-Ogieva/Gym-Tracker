@@ -4,6 +4,8 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { db } from "./backend/db";
 import { ThemeProvider, useTheme } from "./theme/ThemeContext";
 import { useSyncManager } from "./utils/useSyncManager";
+import { ActiveWorkoutProvider } from "./utils/ActiveWorkoutContext";
+import MinimizedWorkoutBar from "./components/MinimizedWorkoutBar";
 
 function RootNav() {
   const [session, setSession] = useState<any>(null);
@@ -75,9 +77,11 @@ function RootNav() {
         <Stack.Screen name="auth" />
         <Stack.Screen name="workout" options={{ animation: "slide_from_bottom", animationDuration: 280 }} />
         <Stack.Screen name="settings" options={{ animation: "slide_from_bottom", animationDuration: 280 }} />
+        <Stack.Screen name="routine/[routineId]" options={{ animation: "slide_from_bottom", animationDuration: 280 }} />
         <Stack.Screen name="exercise-detail/[exerciseId]" options={{ animation: "slide_from_right", animationDuration: 280 }} />
         <Stack.Screen name="index" />
       </Stack>
+      <MinimizedWorkoutBar />
     </View>
   );
 }
@@ -85,7 +89,9 @@ function RootNav() {
 export default function RootLayout() {
   return (
     <ThemeProvider>
-      <RootNav />
+      <ActiveWorkoutProvider>
+        <RootNav />
+      </ActiveWorkoutProvider>
     </ThemeProvider>
   );
 }

@@ -12,6 +12,7 @@ export type SessionWithMeta = {
   notes: string | null;
   exerciseCount: number;
   totalVolume: number;
+  totalReps: number;
   exerciseNames: string[];
 };
 

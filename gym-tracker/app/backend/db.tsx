@@ -121,6 +121,13 @@ export const db = {
     return localDb.insertRoutine(routine);
   },
 
+  updateRoutine: async (routineId: number, updates: { routine_name?: string; description?: string | null; routine_order?: number }) => {
+    if (useSupabase()) {
+      return supabase.from("routines").update(updates).eq("routine_id", routineId);
+    }
+    return localDb.updateRoutine(routineId, updates);
+  },
+
   deleteRoutine: async (routineId: number) => {
     if (useSupabase()) {
       return supabase.from("routines").delete().eq("routine_id", routineId);
@@ -157,6 +164,13 @@ export const db = {
       return supabase.from("routine_exercises").delete().eq("routine_exercise_id", routineExerciseId);
     }
     return localDb.deleteRoutineExercise(routineExerciseId);
+  },
+
+  updateRoutineExercise: async (routineExerciseId: number, updates: { exercise_id?: string; exercise_name?: string }) => {
+    if (useSupabase()) {
+      return supabase.from("routine_exercises").update(updates).eq("routine_exercise_id", routineExerciseId);
+    }
+    return localDb.updateRoutineExercise(routineExerciseId, updates);
   },
 
   // Routine Exercise Sets (template sets)
@@ -211,7 +225,7 @@ export const db = {
       const result = await supabase.from("workout_sessions").insert({
         routine_id: params.routine_id,
         session_name: params.session_name,
-        session_date: now.toISOString().split("T")[0],
+        session_date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
         start_time: now.toTimeString().split(" ")[0],
         user_id: params.user_id,
       }).select().single();
@@ -355,6 +369,13 @@ export const db = {
     return localDb.deleteSessionExercise(sessionExerciseId);
   },
 
+  updateSessionExercise: async (sessionExerciseId: number, updates: { notes?: string; exercise_id?: string; exercise_name?: string }) => {
+    if (useSupabase()) {
+      return supabase.from("session_exercises").update(updates).eq("session_exercise_id", sessionExerciseId);
+    }
+    return localDb.updateSessionExercise(sessionExerciseId, updates);
+  },
+
   // Session Exercise Sets
   getSessionExerciseSets: async (sessionExerciseId: number) => {
     if (useSupabase()) {
@@ -405,7 +426,7 @@ export const db = {
         supabase.from("workout_sessions").insert({
           routine_id: routineId,
           session_name: routine.routine_name,
-          session_date: now.toISOString().split("T")[0],
+          session_date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
           start_time: now.toTimeString().split(" ")[0],
           user_id: userId,
         }).select().single(),

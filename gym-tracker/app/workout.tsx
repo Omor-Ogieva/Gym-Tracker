@@ -3,7 +3,9 @@ import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import ConfirmModal from "./components/ConfirmModal";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { useActiveWorkout } from "./utils/ActiveWorkoutContext";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { db } from "./backend/db";
 import { useTheme } from "./theme/ThemeContext";
@@ -18,8 +20,10 @@ import { useUnits } from "./utils/units";
 
 export default function WorkoutScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const scrollRef = useRef<ScrollView>(null);
   const { colors } = useTheme();
+  const { minimizeWorkout, clearActiveWorkout } = useActiveWorkout();
   const { toDisplay, label: unitLabel } = useUnits();
   const { sessionId: sessionIdParam } = useLocalSearchParams<{ sessionId: string }>();
 
@@ -32,11 +36,40 @@ export default function WorkoutScreen() {
   const [notes, setNotes] = useState("");
   const startTimestamp = useRef<number>(Date.now());
 
+  const isMinimizingRef = useRef(false);
+
+  const handleMinimize = useCallback(() => {
+    if (!session) return;
+    minimizeWorkout(session.session_id, session.session_name, startTimestamp.current);
+    isMinimizingRef.current = true;
+    router.back();
+  }, [session, minimizeWorkout, router]);
+
+  // Intercept back swipe — minimize instead of popping
+  useEffect(() => {
+    const unsub = navigation.addListener("beforeRemove" as any, (e: any) => {
+      if (!session || session.end_time) return;
+      // Let our own router.back() (from handleMinimize) pass through
+      if (isMinimizingRef.current) {
+        isMinimizingRef.current = false;
+        return;
+      }
+      e.preventDefault();
+      handleMinimize();
+    });
+    return unsub;
+  }, [navigation, session, handleMinimize]);
+
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
   const [setOptionsVisible, setSetOptionsVisible] = useState(false);
   const [selectedSet, setSelectedSet] = useState<any>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<number | null>(null);
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [prevSets, setPrevSets] = useState<Record<string, any[]>>({});
+  const [exerciseOptionsVisible, setExerciseOptionsVisible] = useState(false);
+  const [selectedExerciseForOptions, setSelectedExerciseForOptions] = useState<any>(null);
+  const exercisePickerModeRef = useRef<"add" | "replace">("add");
+  const replaceTargetRef = useRef<any>(null);
 
   const restTimer = useRestTimer();
 
@@ -71,13 +104,15 @@ export default function WorkoutScreen() {
 
   useEffect(() => {
     if (!session || session.end_time) return;
-    startTimestamp.current = Date.now();
-    setElapsed(0);
+    // Derive real start time from DB fields so the timer survives remounts
+    const ts = new Date(session.session_date + "T" + session.start_time).getTime();
+    startTimestamp.current = ts;
+    setElapsed(Math.floor((Date.now() - ts) / 1000));
     const interval = setInterval(() => {
       setElapsed(Math.floor((Date.now() - startTimestamp.current) / 1000));
     }, 1000);
     return () => clearInterval(interval);
-  }, [session]);
+  }, [session?.session_id]);
 
   const formatTime = useCallback((seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -100,6 +135,13 @@ export default function WorkoutScreen() {
     if (sessionResult.data) {
       setSession(sessionResult.data);
       setNotes(sessionResult.data.notes ?? "");
+      // Register in context so the bar is visible even while inside the workout screen
+      if (!sessionResult.data.end_time) {
+        const ts = new Date(
+          sessionResult.data.session_date + "T" + sessionResult.data.start_time
+        ).getTime();
+        minimizeWorkout(sessionResult.data.session_id, sessionResult.data.session_name, ts);
+      }
     }
 
     const exs = exercisesResult.data ?? [];
@@ -233,6 +275,10 @@ export default function WorkoutScreen() {
     const { error } = await db.finishWorkoutSession(session.session_id, notes || null);
     if (error) { setError(error.message); return; }
 
+    // Mark local session as ended so the beforeRemove listener doesn't intercept router.back()
+    setSession((prev: any) => ({ ...prev, end_time: new Date().toISOString() }));
+    cancelRestDoneNotification();
+    clearActiveWorkout();
     try {
       const { data: userData } = await db.getUser();
       const userId = userData?.user?.id;
@@ -258,20 +304,60 @@ export default function WorkoutScreen() {
     router.back();
   }, 1000);
 
-  const discardWorkout = useGuardedPress(async () => {
+  const discardWorkout = useGuardedPress(() => {
     if (!session) return;
-    Alert.alert(
-      "Discard Workout",
-      "This workout will be deleted. This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Discard", style: "destructive", onPress: async () => {
-          await db.deleteWorkoutSession(session.session_id);
-          router.back();
-        }},
-      ]
-    );
+    setShowDiscardModal(true);
   }, 500);
+
+  const handleConfirmDiscard = useCallback(async () => {
+    if (!session) return;
+    setShowDiscardModal(false);
+    cancelRestDoneNotification();
+    clearActiveWorkout();
+    isMinimizingRef.current = true;
+    await db.deleteWorkoutSession(session.session_id);
+    router.back();
+  }, [session, clearActiveWorkout, router]);
+
+  const openExerciseOptions = useCallback((ex: any) => {
+    setSelectedExerciseForOptions(ex);
+    setExerciseOptionsVisible(true);
+  }, []);
+
+  const closeExerciseOptions = useCallback(() => {
+    setExerciseOptionsVisible(false);
+    setSelectedExerciseForOptions(null);
+  }, []);
+
+  const handleRemoveExercise = useGuardedPress(async () => {
+    if (!selectedExerciseForOptions) return;
+    const { error } = await db.deleteSessionExercise(selectedExerciseForOptions.session_exercise_id);
+    if (error) { setError(error.message); closeExerciseOptions(); return; }
+    setExercises((prev) => prev.filter((e) => e.session_exercise_id !== selectedExerciseForOptions.session_exercise_id));
+    setExerciseSets((prev) => {
+      const next = { ...prev };
+      delete next[selectedExerciseForOptions.session_exercise_id];
+      return next;
+    });
+    closeExerciseOptions();
+  });
+
+  const handleReplaceExercise = useGuardedPress(async (exercise: any) => {
+    const target = replaceTargetRef.current;
+    if (!target) return;
+    setShowAddExercise(false);
+    const { error } = await db.updateSessionExercise(target.session_exercise_id, {
+      exercise_id: exercise.id,
+      exercise_name: exercise.name,
+    });
+    if (error) { setError(error.message); replaceTargetRef.current = null; return; }
+    setExercises((prev) => prev.map((e) =>
+      e.session_exercise_id === target.session_exercise_id
+        ? { ...e, exercise_id: exercise.id, exercise_name: exercise.name }
+        : e
+    ));
+    replaceTargetRef.current = null;
+  });
 
   const handleAddExercise = useGuardedPress(async (exercise: any) => {
     if (!session) return;
@@ -280,7 +366,7 @@ export default function WorkoutScreen() {
       session_id: session.session_id,
       exercise_id: exercise.id,
       exercise_name: exercise.name,
-      exercise_order: exercises.length + 1,
+      exercise_order: exercises.length === 0 ? 1 : Math.max(...exercises.map((e) => e.exercise_order)) + 1,
       notes: null,
     });
     if (error) { setError(error.message); return; }
@@ -320,7 +406,7 @@ export default function WorkoutScreen() {
     >
       {/* ── Sticky header ── */}
       <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => discardWorkout()} hitSlop={8} style={styles.headerBack}>
+        <Pressable onPress={handleMinimize} hitSlop={8} style={styles.headerBack}>
           <Ionicons name="chevron-down" size={22} color={colors.textSecondary} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
@@ -381,7 +467,9 @@ export default function WorkoutScreen() {
                     {ex.exercise_name}
                   </Text>
                 </Pressable>
-                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textTertiary} />
+                <Pressable onPress={() => openExerciseOptions(ex)} hitSlop={8}>
+                  <Ionicons name="ellipsis-horizontal" size={20} color={colors.textTertiary} />
+                </Pressable>
               </View>
 
               {/* Column headers */}
@@ -454,8 +542,19 @@ export default function WorkoutScreen() {
 
       <ExercisePicker
         visible={showAddExercise}
-        onSelect={handleAddExercise}
-        onClose={() => setShowAddExercise(false)}
+        onSelect={(exercise) => {
+          if (exercisePickerModeRef.current === "replace") {
+            exercisePickerModeRef.current = "add";
+            handleReplaceExercise(exercise);
+          } else {
+            handleAddExercise(exercise);
+          }
+        }}
+        onClose={() => {
+          exercisePickerModeRef.current = "add";
+          replaceTargetRef.current = null;
+          setShowAddExercise(false);
+        }}
       />
 
       {/* Set options bottom sheet */}
@@ -494,6 +593,58 @@ export default function WorkoutScreen() {
           </View>
         </Pressable>
       </Modal>
+
+      {/* Exercise options bottom sheet */}
+      <Modal visible={exerciseOptionsVisible} transparent animationType="slide" onRequestClose={closeExerciseOptions}>
+        <Pressable style={modalStyles.overlay} onPress={closeExerciseOptions}>
+          <View style={[modalStyles.sheet, { backgroundColor: colors.surface }]}>
+            <View style={[modalStyles.handle, { backgroundColor: colors.border }]} />
+            <Text style={[modalStyles.sheetTitle, { color: colors.textSecondary }]} numberOfLines={1}>
+              {selectedExerciseForOptions?.exercise_name}
+            </Text>
+            <Pressable
+              style={[modalStyles.option, { borderBottomColor: colors.border }]}
+              onPress={() => {
+                exercisePickerModeRef.current = "replace";
+                replaceTargetRef.current = selectedExerciseForOptions;
+                closeExerciseOptions();
+                setShowAddExercise(true);
+              }}
+            >
+              <View style={[modalStyles.iconWrap, { backgroundColor: colors.primaryLight }]}>
+                <Ionicons name="swap-horizontal-outline" size={16} color={colors.primary} />
+              </View>
+              <Text style={[modalStyles.optionLabel, { color: colors.text }]}>Replace Exercise</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            </Pressable>
+            <Pressable style={modalStyles.option} onPress={handleRemoveExercise}>
+              <View style={[modalStyles.iconWrap, { backgroundColor: colors.dangerLight }]}>
+                <Ionicons name="trash-outline" size={16} color={colors.danger} />
+              </View>
+              <Text style={[modalStyles.optionLabel, { color: colors.danger }]}>Remove Exercise</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.danger} style={{ opacity: 0.4 }} />
+            </Pressable>
+            <Pressable
+              style={[modalStyles.cancelBtn, { backgroundColor: colors.surfaceSecondary }]}
+              onPress={closeExerciseOptions}
+            >
+              <Text style={[modalStyles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      <ConfirmModal
+        visible={showDiscardModal}
+        title="Discard Workout"
+        message="This workout will be permanently deleted. This cannot be undone."
+        confirmText="Discard"
+        cancelText="Keep"
+        confirmStyle="danger"
+        icon="trash-outline"
+        onConfirm={handleConfirmDiscard}
+        onCancel={() => setShowDiscardModal(false)}
+      />
     </KeyboardAvoidingView>
   );
 }

@@ -6,6 +6,7 @@ import { db, isOnline } from "../backend/db";
 import { useTheme } from "../theme/ThemeContext";
 import { useUnits } from "../utils/units";
 import WorkoutHistoryList, { SessionWithMeta } from "../components/WorkoutHistoryList";
+import WorkoutChart from "../components/WorkoutChart";
 
 function localDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -108,6 +109,7 @@ export default function ProfileScreen() {
       const enriched: SessionWithMeta[] = sessionsData.map((s: any) => {
         const exs = exercisesBySession[s.session_id] ?? [];
         let sessionVolume = 0;
+        let sessionReps = 0;
         for (const ex of exs) {
           uniqueExercises.add(ex.exercise_id);
           for (const set of setsByExercise[ex.session_exercise_id] ?? []) {
@@ -116,6 +118,7 @@ export default function ProfileScreen() {
               if (set.weight != null && set.reps != null) {
                 sessionVolume += set.weight * set.reps;
               }
+              if (set.reps != null) sessionReps += set.reps;
             }
           }
         }
@@ -129,6 +132,7 @@ export default function ProfileScreen() {
           notes: s.notes,
           exerciseCount: exs.length,
           totalVolume: sessionVolume,
+          totalReps: sessionReps,
           exerciseNames: exs.map((ex: any) => ex.exercise_name),
         };
       });
@@ -280,6 +284,9 @@ export default function ProfileScreen() {
           })}
         </View>
       </View>
+
+      {/* ── Progress chart ── */}
+      {sessions.length > 0 && <WorkoutChart sessions={sessions} />}
 
       {/* ── Workout history ── */}
       <View style={styles.sectionHeader}>
