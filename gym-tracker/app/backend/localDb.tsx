@@ -142,7 +142,7 @@ export const localDb = {
     return { data: user, error: user ? null : { message: "User not found" } };
   },
 
-  updateUserProfile: async (userId: string, updates: { username: string }) => {
+  updateUserProfile: async (userId: string, updates: { username?: string; bio?: string | null; avatar_url?: string | null }) => {
     const user = localUsers.find((u) => u.user_id === userId);
     if (!user) return { data: null, error: { message: "User not found" } };
     Object.assign(user, updates);

@@ -1,4 +1,5 @@
-import { Linking, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, Alert } from "react-native";
+import { Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, Alert } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -177,58 +178,182 @@ function RestTimerModal({ visible, onClose }: { visible: boolean; onClose: () =>
   );
 }
 
+const AVATAR_LOCAL_KEY = "@gym_tracker_avatar_uri";
+
 function ProfileEditModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { colors } = useTheme();
+  const [userId, setUserId] = useState<string | null>(null);
   const [username, setUsername] = useState("");
+  const [bio, setBio] = useState("");
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) return;
+    setError(null);
     db.getUser().then(({ data }) => {
-      if (data?.user?.id) {
-        db.getUserProfile(data.user.id).then(({ data: profile }) => {
-          if (profile?.username) setUsername(profile.username);
-        });
-      }
+      const uid = data?.user?.id;
+      if (!uid) return;
+      setUserId(uid);
+      Promise.all([
+        db.getUserProfile(uid),
+        // Load last-known local avatar URI as a quick display while we check profile
+        AsyncStorage.getItem(AVATAR_LOCAL_KEY),
+      ]).then(([{ data: profile }, localUri]) => {
+        if (profile?.username) setUsername(profile.username);
+        if (profile?.bio) setBio(profile.bio);
+        // Prefer remote avatar_url, fall back to cached local URI
+        setAvatarUri(profile?.avatar_url ?? localUri ?? null);
+      });
     });
   }, [visible]);
 
-  const handleSave = async () => {
-    if (!username.trim()) { setError("Username cannot be empty."); return; }
-    setLoading(true); setError(null);
-    const { data: userData } = await db.getUser();
-    const userId = userData?.user?.id;
-    if (!userId) { setError("Not authenticated."); setLoading(false); return; }
-    const { error: err } = await db.updateUserProfile(userId, { username: username.trim() });
-    setLoading(false);
-    if (err) { setError(err.message); return; }
-    onClose();
+  const handlePickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission needed", "Allow access to your photo library to set a profile picture.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const uri = result.assets[0].uri;
+    setAvatarUri(uri);
+    // Cache locally so it shows even before Save is tapped
+    await AsyncStorage.setItem(AVATAR_LOCAL_KEY, uri);
   };
 
+  const handleSave = async () => {
+    if (!username.trim()) { setError("Username cannot be empty."); return; }
+    if (!userId) { setError("Not authenticated."); return; }
+    setLoading(true); setError(null);
+
+    let avatarUrl: string | null | undefined = undefined; // undefined = don't update
+
+    // Upload avatar if the current URI looks like a local file (not already a remote URL)
+    if (avatarUri && !avatarUri.startsWith("http")) {
+      setUploading(true);
+      const { url, error: uploadErr } = await db.uploadAvatar(userId, avatarUri);
+      setUploading(false);
+      if (uploadErr) {
+        // Non-fatal: warn but still save the rest
+        setError(`Avatar upload failed: ${uploadErr}. Other changes will still be saved.`);
+      } else {
+        avatarUrl = url;
+        if (url) await AsyncStorage.setItem(AVATAR_LOCAL_KEY, url);
+      }
+    }
+
+    const updates: { username: string; bio?: string | null; avatar_url?: string | null } = {
+      username: username.trim(),
+      bio: bio.trim() || null,
+    };
+    if (avatarUrl !== undefined) updates.avatar_url = avatarUrl;
+
+    const { error: err } = await db.updateUserProfile(userId, updates);
+    setLoading(false);
+    if (err) { setError(err.message); return; }
+    if (!error) onClose(); // only close if no avatar warning
+  };
+
+  const initials = username ? username.slice(0, 2).toUpperCase() : "?";
+  const isBusy = loading || uploading;
+
   return (
-    <ModalShell visible={visible} onClose={onClose} title="Edit Profile">
-      {error && <Text style={{ color: colors.danger, fontSize: 13, marginBottom: 10, textAlign: "center" }}>{error}</Text>}
-      <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 6 }}>Username</Text>
-      <TextInput
-        style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 12, fontSize: 16, color: colors.text, backgroundColor: colors.inputBackground, marginBottom: 20 }}
-        value={username}
-        onChangeText={setUsername}
-        placeholder="Enter username"
-        placeholderTextColor={colors.textTertiary}
-        autoCapitalize="none"
-      />
-      <View style={{ flexDirection: "row", gap: 10 }}>
-        <Pressable style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: colors.surfaceSecondary, alignItems: "center" }} onPress={onClose}>
-          <Text style={{ fontSize: 16, fontWeight: "600", color: colors.textSecondary }}>Cancel</Text>
-        </Pressable>
-        <Pressable style={{ flex: 2, paddingVertical: 12, borderRadius: 10, backgroundColor: colors.primary, alignItems: "center", opacity: loading ? 0.6 : 1 }} onPress={handleSave} disabled={loading}>
-          <Text style={{ fontSize: 16, fontWeight: "700", color: "#fff" }}>{loading ? "Saving…" : "Save"}</Text>
-        </Pressable>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={profileStyles.backdrop}>
+        <View style={[profileStyles.sheet, { backgroundColor: colors.surface }]}>
+          <View style={[profileStyles.handle, { backgroundColor: colors.border }]} />
+          <Text style={[profileStyles.title, { color: colors.text }]}>Edit Profile</Text>
+
+          {/* ── Avatar ── */}
+          <View style={profileStyles.avatarRow}>
+            <Pressable style={profileStyles.avatarWrap} onPress={handlePickImage}>
+              {avatarUri ? (
+                <Image source={{ uri: avatarUri }} style={profileStyles.avatarImg} />
+              ) : (
+                <View style={[profileStyles.avatarPlaceholder, { backgroundColor: colors.surfaceSecondary }]}>
+                  <Text style={[profileStyles.avatarInitials, { color: colors.primary }]}>{initials}</Text>
+                </View>
+              )}
+              <View style={[profileStyles.cameraBtn, { backgroundColor: colors.primary }]}>
+                <Text style={{ fontSize: 14 }}>📷</Text>
+              </View>
+            </Pressable>
+            <Text style={[profileStyles.avatarHint, { color: colors.textTertiary }]}>
+              Tap to change photo
+            </Text>
+          </View>
+
+          {error && <Text style={{ color: colors.danger, fontSize: 13, marginBottom: 10, textAlign: "center" }}>{error}</Text>}
+
+          {/* ── Username ── */}
+          <Text style={[profileStyles.fieldLabel, { color: colors.textSecondary }]}>Username</Text>
+          <TextInput
+            style={[profileStyles.input, { borderColor: colors.border, color: colors.text, backgroundColor: colors.inputBackground }]}
+            value={username}
+            onChangeText={setUsername}
+            placeholder="Enter username"
+            placeholderTextColor={colors.textTertiary}
+            autoCapitalize="none"
+          />
+
+          {/* ── Bio ── */}
+          <Text style={[profileStyles.fieldLabel, { color: colors.textSecondary }]}>Bio</Text>
+          <TextInput
+            style={[profileStyles.input, profileStyles.bioInput, { borderColor: colors.border, color: colors.text, backgroundColor: colors.inputBackground }]}
+            value={bio}
+            onChangeText={setBio}
+            placeholder="A little about yourself…"
+            placeholderTextColor={colors.textTertiary}
+            multiline
+            maxLength={160}
+          />
+          <Text style={[profileStyles.charCount, { color: colors.textTertiary }]}>{bio.length}/160</Text>
+
+          {/* ── Actions ── */}
+          <View style={profileStyles.actions}>
+            <Pressable style={[profileStyles.cancelBtn, { backgroundColor: colors.surfaceSecondary }]} onPress={onClose} disabled={isBusy}>
+              <Text style={{ fontSize: 16, fontWeight: "600", color: colors.textSecondary }}>Cancel</Text>
+            </Pressable>
+            <Pressable style={[profileStyles.saveBtn, { backgroundColor: colors.primary, opacity: isBusy ? 0.6 : 1 }]} onPress={handleSave} disabled={isBusy}>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: "#fff" }}>
+                {uploading ? "Uploading…" : loading ? "Saving…" : "Save"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
       </View>
-    </ModalShell>
+    </Modal>
   );
 }
+
+const profileStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
+  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 16 },
+  title: { fontSize: 20, fontWeight: "700", textAlign: "center", marginBottom: 20 },
+  avatarRow: { alignItems: "center", marginBottom: 24 },
+  avatarWrap: { position: "relative", width: 88, height: 88, marginBottom: 8 },
+  avatarImg: { width: 88, height: 88, borderRadius: 44 },
+  avatarPlaceholder: { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center" },
+  avatarInitials: { fontSize: 32, fontWeight: "800" },
+  cameraBtn: { position: "absolute", bottom: 0, right: 0, width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  avatarHint: { fontSize: 12 },
+  fieldLabel: { fontSize: 13, fontWeight: "600", marginBottom: 6 },
+  input: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 16, marginBottom: 16 },
+  bioInput: { height: 80, textAlignVertical: "top" },
+  charCount: { fontSize: 11, textAlign: "right", marginTop: -12, marginBottom: 16 },
+  actions: { flexDirection: "row", gap: 12, marginTop: 4 },
+  cancelBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: "center" },
+  saveBtn: { flex: 2, paddingVertical: 13, borderRadius: 12, alignItems: "center" },
+});
 
 function ChangePasswordModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { colors } = useTheme();

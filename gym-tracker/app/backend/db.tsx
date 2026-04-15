@@ -77,11 +77,30 @@ export const db = {
     return localDb.getUserProfile(userId);
   },
 
-  updateUserProfile: async (userId: string, updates: { username: string }) => {
+  updateUserProfile: async (userId: string, updates: { username?: string; bio?: string | null; avatar_url?: string | null }) => {
     if (useSupabase()) {
       return supabase.from("users").update(updates).eq("user_id", userId);
     }
     return localDb.updateUserProfile(userId, updates);
+  },
+
+  uploadAvatar: async (userId: string, uri: string): Promise<{ url: string | null; error: string | null }> => {
+    if (!useSupabase()) return { url: null, error: "Requires internet connection" };
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const ext = uri.split(".").pop()?.split("?")[0] ?? "jpg";
+      const path = `${userId}/avatar.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(path, blob, { upsert: true, contentType: blob.type || "image/jpeg" });
+      if (uploadError) return { url: null, error: uploadError.message };
+      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      // Bust cache by appending a timestamp
+      return { url: `${data.publicUrl}?t=${Date.now()}`, error: null };
+    } catch (e: any) {
+      return { url: null, error: e.message ?? "Upload failed" };
+    }
   },
 
   changePassword: async (newPassword: string) => {

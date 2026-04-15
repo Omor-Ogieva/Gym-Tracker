@@ -96,10 +96,10 @@ After a workout is saved, the app compares the max weight and max volume (weight
 Each exercise has a detail screen showing a line chart (via `react-native-gifted-charts`) of max weight per session plotted over time, with session dates as x-axis labels. Unit conversion (lbs/kg) is applied to chart values.
 
 #### Feature: Rest Timer
-A configurable auto-starting countdown banner appears after each set is marked complete. Duration is user-configurable (60 s – 5 min with custom option). The banner is dismissible and plays haptic feedback on completion.
+A configurable auto-starting countdown banner appears after each set is marked complete. Duration is user-configurable (60 s – 5 min with custom option). The banner is dismissible and plays haptic feedback on completion. When the app is backgrounded, a local push notification (via `expo-notifications`) fires when the countdown reaches zero, so users are alerted even if they lock their screen mid-rest.
 
 #### Feature: Workout History Management
-Each completed workout card in the Profile tab exposes a contextual action sheet (3-dot menu) with three options: **Share** (exports a formatted text summary via the native Share API), **Edit** (opens a modal to rename the session and update notes, saved via `updateWorkoutSession`), and **Delete** (confirms via an alert, then calls `deleteWorkoutSession` and removes the card from local state without a re-fetch).
+Each completed workout card in the Profile tab exposes a contextual action sheet (3-dot menu) with three options: **Share** (exports a formatted text summary via the native Share API), **Edit** (navigates to a dedicated full-screen past-workout editor at `workout-edit/[sessionId]` where users can rename the session, update notes, and edit any exercise's sets — weight, reps, warmup flag — add or remove sets, add new exercises, or replace existing ones; all changes auto-save on blur; name/notes save on "Done"), and **Delete** (confirms via an alert, then calls `deleteWorkoutSession` and removes the card from local state without a re-fetch).
 
 #### Feature: Exercise Options Menu (3-dot) in Active Workout & Routine Editor
 
@@ -188,11 +188,13 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | BL-31 | Workout history share via native Share API | DONE |
 | BL-32 | Profile batch queries and stale-while-revalidate caching | DONE |
 | BL-33 | Tab transition and screen animation flicker fixes | DONE |
+| BL-34 | Push notifications for rest timer (background alert when countdown ends) | DONE |
+| BL-49 | Past workout editing — full-screen editor for reps, sets, exercises, name, notes | DONE |
 
 ### Backlog — Future Work
 | ID | Item | Status | Notes |
 |----|------|--------|-------|
-| BL-34 | Push notifications for rest timer completion | TODO | Requires `expo-notifications` |
+| BL-34 | Push notifications for rest timer completion | DONE | `expo-notifications`; fires a local notification when countdown reaches 0 |
 | BL-35 | Sync local offline data to Supabase on reconnect | DONE | `offlineQueue.ts`, `networkStatus.ts`, `useSyncManager` hook; closes DEF-01 |
 | BL-36 | Routine reordering / editing after creation | DONE | 3-dot menu on each routine card — edit, move up/down, delete (BL-41–43); closes DEF-02 |
 | BL-37 | Barcode / plate calculator | TODO | |
@@ -584,6 +586,7 @@ HTML report is generated at `coverage/lcov-report/index.html`.
 | 2 | Mark a set complete | Rest timer banner appears with countdown | Pass |
 | 3 | Wait for countdown to reach 0 | Haptic feedback fires, banner updates | Pass |
 | 4 | Tap "Dismiss" on banner | Banner disappears | Pass |
+| 5 | Background the app mid-countdown | Local push notification fires when countdown reaches 0 | Pass |
 
 #### TC-10: Theme Switching
 | Step | Action | Expected Result | Pass/Fail |

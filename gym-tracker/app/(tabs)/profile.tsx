@@ -1,12 +1,43 @@
 import { useCallback, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db, isOnline } from "../backend/db";
 import { useTheme } from "../theme/ThemeContext";
 import { useUnits } from "../utils/units";
 import WorkoutHistoryList, { SessionWithMeta } from "../components/WorkoutHistoryList";
 import WorkoutChart from "../components/WorkoutChart";
+
+// ─── Stat definitions ─────────────────────────────────────────────────────────
+
+export type StatId =
+  | "totalWorkouts"
+  | "totalSets"
+  | "totalVolume"
+  | "totalReps"
+  | "uniqueExercises"
+  | "heaviestWeight"
+  | "longestSession"
+  | "avgDuration";
+
+type StatDef = { id: StatId; label: string; description: string };
+
+const ALL_STAT_DEFS: StatDef[] = [
+  { id: "totalWorkouts",  label: "Workouts",     description: "Total completed workout sessions" },
+  { id: "totalSets",      label: "Sets",          description: "Total completed sets across all workouts" },
+  { id: "totalVolume",    label: "Volume",        description: "Total weight × reps lifted" },
+  { id: "totalReps",      label: "Reps",          description: "Total reps completed across all workouts" },
+  { id: "uniqueExercises",label: "Exercises",     description: "Number of distinct exercises performed" },
+  { id: "heaviestWeight", label: "Heaviest",      description: "Maximum single-set weight ever lifted" },
+  { id: "longestSession", label: "Longest",       description: "Duration of your longest workout" },
+  { id: "avgDuration",    label: "Avg Time",      description: "Average duration of all workouts" },
+];
+
+const DEFAULT_STATS: StatId[] = ["totalWorkouts", "totalSets", "totalVolume"];
+const STATS_STORAGE_KEY = "@gym_tracker_profile_stats";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function localDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -40,6 +71,39 @@ function calcStreaks(sessions: SessionWithMeta[]) {
   return { current, longest };
 }
 
+function getDurationMins(sessionDate: string, startTime: string, endTime: string | null): number | null {
+  if (!endTime) return null;
+  const toDate = (t: string) =>
+    t.includes("T") || t.length > 10 ? new Date(t) : new Date(`${sessionDate}T${t}`);
+  const start = toDate(startTime);
+  const end = toDate(endTime);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+  const ms = end.getTime() - start.getTime();
+  if (ms < 0) return null;
+  return Math.floor(ms / 60000);
+}
+
+function formatMinutes(mins: number): string {
+  if (mins === 0) return "—";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  return `${h}h ${m}m`;
+}
+
+// ─── Main screen ──────────────────────────────────────────────────────────────
+
+type AllStats = {
+  totalWorkouts: number;
+  totalVolume: number;
+  totalExercises: number;
+  totalSets: number;
+  totalReps: number;
+  heaviestWeight: number;
+  longestSession: number;
+  avgDuration: number;
+};
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { colors } = useTheme();
@@ -50,7 +114,12 @@ export default function ProfileScreen() {
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<any>(null);
   const [sessions, setSessions] = useState<SessionWithMeta[]>([]);
-  const [stats, setStats] = useState({ totalWorkouts: 0, totalVolume: 0, totalExercises: 0, totalSets: 0 });
+  const [stats, setStats] = useState<AllStats>({
+    totalWorkouts: 0, totalVolume: 0, totalExercises: 0, totalSets: 0,
+    totalReps: 0, heaviestWeight: 0, longestSession: 0, avgDuration: 0,
+  });
+  const [selectedStats, setSelectedStats] = useState<StatId[]>(DEFAULT_STATS);
+  const [customizerOpen, setCustomizerOpen] = useState(false);
 
   const hasDataRef = useRef(false);
   const lastFetchedRef = useRef(0);
@@ -59,10 +128,8 @@ export default function ProfileScreen() {
     const now = Date.now();
     const isStale = now - lastFetchedRef.current > 30_000;
 
-    // Skip if data is fresh and this isn't a manual pull-to-refresh
     if (hasDataRef.current && !isStale && !isRefresh) return;
 
-    // Show spinner only on first load; subsequent refreshes are silent
     if (isRefresh) {
       setRefreshing(true);
     } else if (!hasDataRef.current) {
@@ -70,14 +137,27 @@ export default function ProfileScreen() {
     }
     setError(null);
 
+    // Load saved stat selection in parallel with the DB fetch
+    const savedStatsPromise = AsyncStorage.getItem(STATS_STORAGE_KEY).then((val) => {
+      if (!val) return DEFAULT_STATS;
+      try {
+        const parsed = JSON.parse(val) as StatId[];
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+      return DEFAULT_STATS;
+    });
+
     try {
       const { data: { user } } = await db.getUser();
       if (!user) { setError("Not authenticated"); return; }
 
-      const [profileResult, sessionsResult] = await Promise.all([
+      const [profileResult, sessionsResult, savedStatIds] = await Promise.all([
         db.getUserProfile(user.id),
         db.getWorkoutSessions(user.id),
+        savedStatsPromise,
       ]);
+
+      setSelectedStats(savedStatIds);
 
       if (profileResult.error) { setError(profileResult.error.message); return; }
       setProfile(profileResult.data);
@@ -85,14 +165,12 @@ export default function ProfileScreen() {
       if (sessionsResult.error) { setError(sessionsResult.error.message); return; }
       const sessionsData = sessionsResult.data ?? [];
 
-      // Batch fetch — 1 request for all exercises, 1 request for all sets
       const sessionIds = sessionsData.map((s: any) => s.session_id);
       const { data: allExercisesFlat } = await db.getBatchSessionExercises(sessionIds);
 
       const exerciseIds = (allExercisesFlat ?? []).map((ex: any) => ex.session_exercise_id);
       const { data: allSetsFlat } = await db.getBatchSessionExerciseSets(exerciseIds);
 
-      // Build lookup maps for O(1) access
       const exercisesBySession: Record<number, any[]> = {};
       for (const ex of allExercisesFlat ?? []) {
         (exercisesBySession[ex.session_id] ??= []).push(ex);
@@ -104,6 +182,8 @@ export default function ProfileScreen() {
 
       let overallVolume = 0;
       let overallSets = 0;
+      let overallReps = 0;
+      let heaviestWeight = 0;
       const uniqueExercises = new Set<string>();
 
       const enriched: SessionWithMeta[] = sessionsData.map((s: any) => {
@@ -117,12 +197,14 @@ export default function ProfileScreen() {
               overallSets++;
               if (set.weight != null && set.reps != null) {
                 sessionVolume += set.weight * set.reps;
+                heaviestWeight = Math.max(heaviestWeight, set.weight);
               }
               if (set.reps != null) sessionReps += set.reps;
             }
           }
         }
         overallVolume += sessionVolume;
+        overallReps += sessionReps;
         return {
           session_id: s.session_id,
           session_name: s.session_name,
@@ -139,8 +221,31 @@ export default function ProfileScreen() {
 
       enriched.sort((a, b) => new Date(b.session_date).getTime() - new Date(a.session_date).getTime());
 
+      // Compute duration stats
+      let longestSession = 0;
+      let totalDurationMins = 0;
+      let durationCount = 0;
+      for (const s of sessionsData) {
+        const mins = getDurationMins(s.session_date, s.start_time, s.end_time);
+        if (mins !== null) {
+          longestSession = Math.max(longestSession, mins);
+          totalDurationMins += mins;
+          durationCount++;
+        }
+      }
+      const avgDuration = durationCount > 0 ? Math.round(totalDurationMins / durationCount) : 0;
+
       setSessions(enriched);
-      setStats({ totalWorkouts: enriched.length, totalVolume: overallVolume, totalExercises: uniqueExercises.size, totalSets: overallSets });
+      setStats({
+        totalWorkouts: enriched.length,
+        totalVolume: overallVolume,
+        totalExercises: uniqueExercises.size,
+        totalSets: overallSets,
+        totalReps: overallReps,
+        heaviestWeight,
+        longestSession,
+        avgDuration,
+      });
       hasDataRef.current = true;
       lastFetchedRef.current = Date.now();
     } catch (e: any) {
@@ -158,15 +263,51 @@ export default function ProfileScreen() {
   }, []);
 
   const handleEditWorkout = useCallback((sessionId: number) => {
-    // Invalidate cache so the profile re-fetches fresh data on focus return
     hasDataRef.current = false;
     router.push(`/workout-edit/${sessionId}` as any);
   }, [router]);
 
+  // ── Stat customizer helpers ──────────────────────────────────────────────────
+
+  const toggleStat = useCallback((id: StatId) => {
+    setSelectedStats((prev) => {
+      if (prev.includes(id)) {
+        // Don't allow deselecting the last stat
+        if (prev.length === 1) return prev;
+        return prev.filter((s) => s !== id);
+      }
+      if (prev.length >= 3) return prev; // max 3
+      return [...prev, id];
+    });
+  }, []);
+
+  const handleSaveStats = useCallback(async (ids: StatId[]) => {
+    setSelectedStats(ids);
+    await AsyncStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(ids));
+    setCustomizerOpen(false);
+  }, []);
+
+  // ── Stat value formatting ────────────────────────────────────────────────────
+
+  function getStatDisplay(id: StatId): { value: string; label: string } {
+    switch (id) {
+      case "totalWorkouts":   return { value: String(stats.totalWorkouts), label: "Workouts" };
+      case "totalSets":       return { value: String(stats.totalSets), label: "Sets" };
+      case "totalVolume":     return { value: (toDisplay(stats.totalVolume) ?? stats.totalVolume).toLocaleString(), label: `Vol (${unitLabel})` };
+      case "totalReps":       return { value: stats.totalReps.toLocaleString(), label: "Reps" };
+      case "uniqueExercises": return { value: String(stats.totalExercises), label: "Exercises" };
+      case "heaviestWeight":  return { value: (toDisplay(stats.heaviestWeight) ?? stats.heaviestWeight).toLocaleString(), label: `Best (${unitLabel})` };
+      case "longestSession":  return { value: formatMinutes(stats.longestSession), label: "Longest" };
+      case "avgDuration":     return { value: formatMinutes(stats.avgDuration), label: "Avg Time" };
+    }
+  }
+
+  // ── Weekly dots ──────────────────────────────────────────────────────────────
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const sunday = new Date(today);
-  sunday.setDate(today.getDate() - today.getDay()); // rewind to Sunday (getDay: 0=Sun … 6=Sat)
+  sunday.setDate(today.getDate() - today.getDay());
   const last7 = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(sunday);
     d.setDate(sunday.getDate() + i);
@@ -220,11 +361,20 @@ export default function ProfileScreen() {
 
       {/* ── Avatar + bio ── */}
       <View style={styles.avatarSection}>
-        <View style={[styles.avatarCircle, { backgroundColor: colors.surface }]}>
-          <Text style={[styles.avatarInitials, { color: colors.primary }]}>{initials}</Text>
-        </View>
+        {profile?.avatar_url ? (
+          <Image source={{ uri: profile.avatar_url }} style={styles.avatarCircle} />
+        ) : (
+          <View style={[styles.avatarCircle, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.avatarInitials, { color: colors.primary }]}>{initials}</Text>
+          </View>
+        )}
         <View style={styles.bioInfo}>
           <Text style={[styles.bioName, { color: colors.text }]}>{profile?.username ?? "—"}</Text>
+          {!!profile?.bio && (
+            <Text style={[styles.bioText, { color: colors.textSecondary }]} numberOfLines={2}>
+              {profile.bio}
+            </Text>
+          )}
           {currentStreak > 0 && (
             <View style={styles.streakRow}>
               <Ionicons name="flame" size={16} color="#ff9f0a" />
@@ -234,22 +384,32 @@ export default function ProfileScreen() {
             </View>
           )}
         </View>
-        <View style={styles.statsRow}>
-          <View style={styles.statCell}>
-            <Text style={[styles.statNum, { color: colors.text }]}>{stats.totalWorkouts}</Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Workouts</Text>
+
+        {/* ── Stats row with customize button ── */}
+        <View style={styles.statsBlock}>
+          <View style={styles.statsBlockHeader}>
+            <Pressable
+              style={({ pressed }) => [styles.customizeBtn, pressed && { opacity: 0.5 }]}
+              onPress={() => setCustomizerOpen(true)}
+              hitSlop={8}
+            >
+              <Ionicons name="pencil-outline" size={13} color={colors.primary} />
+              <Text style={[styles.customizeBtnText, { color: colors.primary }]}>Customize</Text>
+            </Pressable>
           </View>
-          <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-          <View style={styles.statCell}>
-            <Text style={[styles.statNum, { color: colors.text }]}>{stats.totalSets}</Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Sets</Text>
-          </View>
-          <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-          <View style={styles.statCell}>
-            <Text style={[styles.statNum, { color: colors.text }]}>
-              {(toDisplay(stats.totalVolume) ?? stats.totalVolume).toLocaleString()}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Vol ({unitLabel})</Text>
+          <View style={styles.statsRow}>
+            {selectedStats.map((id, i) => {
+              const { value, label } = getStatDisplay(id);
+              return (
+                <View key={id} style={{ flexDirection: "row", flex: 1 }}>
+                  {i > 0 && <View style={[styles.statDivider, { backgroundColor: colors.border }]} />}
+                  <View style={styles.statCell}>
+                    <Text style={[styles.statNum, { color: colors.text }]}>{value}</Text>
+                    <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{label}</Text>
+                  </View>
+                </View>
+              );
+            })}
           </View>
         </View>
       </View>
@@ -295,9 +455,124 @@ export default function ProfileScreen() {
       <View style={{ marginHorizontal: 16 }}>
         <WorkoutHistoryList sessions={sessions} onDelete={handleDeleteSession} onEditWorkout={handleEditWorkout} />
       </View>
+
+      {/* ── Stat customizer modal ── */}
+      <StatCustomizerModal
+        visible={customizerOpen}
+        selected={selectedStats}
+        onToggle={toggleStat}
+        onSave={handleSaveStats}
+        onClose={() => setCustomizerOpen(false)}
+      />
     </ScrollView>
   );
 }
+
+// ─── Stat Customizer Modal ────────────────────────────────────────────────────
+
+function StatCustomizerModal({
+  visible,
+  selected,
+  onToggle,
+  onSave,
+  onClose,
+}: {
+  visible: boolean;
+  selected: StatId[];
+  onToggle: (id: StatId) => void;
+  onSave: (ids: StatId[]) => void;
+  onClose: () => void;
+}) {
+  const { colors } = useTheme();
+  // Local draft so we can cancel without saving
+  const [draft, setDraft] = useState<StatId[]>(selected);
+
+  // Sync draft when modal opens
+  const handleOpen = useCallback(() => setDraft(selected), [selected]);
+
+  const toggleDraft = (id: StatId) => {
+    setDraft((prev) => {
+      if (prev.includes(id)) {
+        if (prev.length === 1) return prev; // need at least 1
+        return prev.filter((s) => s !== id);
+      }
+      if (prev.length >= 3) return prev; // max 3
+      return [...prev, id];
+    });
+  };
+
+  const atMax = draft.length >= 3;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      onShow={handleOpen}
+    >
+      <Pressable style={styles.overlay} onPress={onClose}>
+        <Pressable style={[styles.sheet, { backgroundColor: colors.surface }]} onPress={() => {}}>
+          <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+
+          <Text style={[styles.sheetTitle, { color: colors.text }]}>Customize Stats</Text>
+          <Text style={[styles.sheetSubtitle, { color: colors.textSecondary }]}>
+            Pick up to 3 stats to show on your profile
+            {atMax ? " — deselect one to swap" : ""}
+          </Text>
+
+          {ALL_STAT_DEFS.map((def) => {
+            const isSelected = draft.includes(def.id);
+            const disabled = !isSelected && atMax;
+            return (
+              <Pressable
+                key={def.id}
+                style={({ pressed }) => [
+                  styles.statRow,
+                  { borderBottomColor: colors.border },
+                  pressed && !disabled && { backgroundColor: colors.surfaceSecondary },
+                  disabled && { opacity: 0.38 },
+                ]}
+                onPress={() => !disabled && toggleDraft(def.id)}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.statRowLabel, { color: colors.text }]}>{def.label}</Text>
+                  <Text style={[styles.statRowDesc, { color: colors.textTertiary }]}>{def.description}</Text>
+                </View>
+                <View style={[
+                  styles.checkbox,
+                  {
+                    borderColor: isSelected ? colors.primary : colors.border,
+                    backgroundColor: isSelected ? colors.primary : "transparent",
+                  },
+                ]}>
+                  {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
+                </View>
+              </Pressable>
+            );
+          })}
+
+          <View style={styles.sheetActions}>
+            <Pressable
+              style={[styles.sheetCancelBtn, { backgroundColor: colors.surfaceSecondary }]}
+              onPress={onClose}
+            >
+              <Text style={[styles.sheetCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.sheetSaveBtn, { backgroundColor: colors.primary }]}
+              onPress={() => onSave(draft)}
+            >
+              <Text style={styles.sheetSaveText}>Save</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
@@ -331,17 +606,23 @@ const styles = StyleSheet.create({
   avatarInitials: { fontSize: 28, fontWeight: "800" },
   bioInfo: { flex: 1 },
   bioName: { fontSize: 20, fontWeight: "700" },
+  bioText: { fontSize: 13, marginTop: 3, lineHeight: 18 },
   streakRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
   streakText: { fontSize: 14, fontWeight: "500" },
+
+  statsBlock: { width: "100%" },
+  statsBlockHeader: { flexDirection: "row", justifyContent: "flex-end", marginBottom: 6 },
+  customizeBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  customizeBtnText: { fontSize: 12, fontWeight: "600" },
+
   statsRow: {
     flexDirection: "row",
     alignItems: "center",
-    width: "100%",
   },
   statCell: { flex: 1, alignItems: "center", paddingVertical: 10 },
   statNum: { fontSize: 20, fontWeight: "800" },
   statLabel: { fontSize: 11, fontWeight: "500", marginTop: 2 },
-  statDivider: { width: StyleSheet.hairlineWidth, height: 32 },
+  statDivider: { width: StyleSheet.hairlineWidth, height: 32, alignSelf: "center" },
 
   card: { borderRadius: 14, padding: 16 },
   cardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
@@ -355,4 +636,29 @@ const styles = StyleSheet.create({
 
   sectionHeader: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
   sectionTitle: { fontSize: 20, fontWeight: "700" },
+
+  // Customizer modal
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 34, paddingTop: 12 },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 16 },
+  sheetTitle: { fontSize: 18, fontWeight: "700", paddingHorizontal: 20, marginBottom: 4 },
+  sheetSubtitle: { fontSize: 13, paddingHorizontal: 20, marginBottom: 16 },
+  statRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  statRowLabel: { fontSize: 15, fontWeight: "600", marginBottom: 2 },
+  statRowDesc: { fontSize: 12 },
+  checkbox: {
+    width: 24, height: 24, borderRadius: 6, borderWidth: 2,
+    alignItems: "center", justifyContent: "center",
+  },
+  sheetActions: { flexDirection: "row", gap: 12, paddingHorizontal: 20, paddingTop: 20 },
+  sheetCancelBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: "center" },
+  sheetCancelText: { fontSize: 15, fontWeight: "600" },
+  sheetSaveBtn: { flex: 2, paddingVertical: 13, borderRadius: 12, alignItems: "center" },
+  sheetSaveText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 });

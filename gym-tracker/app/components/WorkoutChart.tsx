@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { BarChart } from "react-native-gifted-charts";
 import { useTheme } from "../theme/ThemeContext";
@@ -14,7 +14,6 @@ const RANGE_WEEKS: Record<Range, number> = {
   "3M": 13,
 };
 
-// Width reserved for y-axis labels
 const Y_AXIS_LABEL_WIDTH = 38;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -57,27 +56,24 @@ export default function WorkoutChart({ sessions }: Props) {
 
   const [metric, setMetric] = useState<Metric>("reps");
   const [range, setRange] = useState<Range>("3M");
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+  // Clear selection whenever metric or range changes
+  useEffect(() => { setSelectedIndex(null); }, [metric, range]);
 
   const numWeeks = RANGE_WEEKS[range];
 
-  // Chart body width = screen − card margins (32) − card padding (32) − y-axis (38)
   const chartBodyWidth = Math.max(100, screenWidth - 32 - 32 - Y_AXIS_LABEL_WIDTH);
-
-  // Shrink spacing for crowded ranges so all bars fit within chartBodyWidth
   const barSpacing = 4;
-
-  // barWidth fills the available space: (chartBodyWidth - gaps) / numBars
   const barWidth = Math.max(
     1,
     Math.floor((chartBodyWidth - numWeeks * barSpacing) / numWeeks)
   );
 
-  const { barData, periodTotal } = useMemo(() => {
+  const { barData, periodTotal, weekLabels } = useMemo(() => {
     const nowSunday = weekSunday(new Date());
-
     const leftWeeks = Math.floor((numWeeks - 1) / 2);
 
-    // Build week buckets oldest → newest
     const weeks: Date[] = [];
     for (let i = -leftWeeks; i < numWeeks - leftWeeks; i++) {
       const d = new Date(nowSunday);
@@ -85,7 +81,6 @@ export default function WorkoutChart({ sessions }: Props) {
       weeks.push(d);
     }
 
-    // Aggregate metric value per week
     const weekMap = new Map<string, number>();
     for (const s of sessions) {
       const d = new Date(s.session_date + "T12:00:00");
@@ -97,23 +92,43 @@ export default function WorkoutChart({ sessions }: Props) {
       weekMap.set(key, (weekMap.get(key) ?? 0) + val);
     }
 
-    // Show a date label every Nth bar so the axis stays readable
     const labelEvery = 2;
+
+    // Full human-readable label for every week (used in header when bar is selected)
+    const weekLabels: string[] = [];
 
     let total = 0;
     const barData = weeks.map((weekDate, i) => {
       const key = isoDate(weekDate);
       const value = Math.round(weekMap.get(key) ?? 0);
       total += value;
+      weekLabels.push(shortLabel(weekDate));
       return {
         value,
         label: i % labelEvery === 0 ? shortLabel(weekDate) : "",
+        // frontColor updated after selectedIndex is known — patched below
         frontColor: value > 0 ? colors.primary : colors.surfaceSecondary,
+        onPress: () => {
+          setSelectedIndex((prev) => (prev === i ? null : i));
+        },
       };
     });
 
-    return { barData, periodTotal: total };
+    return { barData, periodTotal: total, weekLabels };
   }, [sessions, metric, range, numWeeks, colors, toDisplay]);
+
+  // Apply selection-aware colors without rerunning the full memo
+  const coloredBarData = barData.map((item, i) => {
+    let frontColor: string;
+    if (selectedIndex === null) {
+      frontColor = item.value > 0 ? colors.primary : colors.surfaceSecondary;
+    } else if (i === selectedIndex) {
+      frontColor = colors.primary;
+    } else {
+      frontColor = item.value > 0 ? colors.primaryLight : colors.surfaceSecondary;
+    }
+    return { ...item, frontColor };
+  });
 
   const maxValue = Math.max(...barData.map((d) => d.value), 1);
 
@@ -123,10 +138,19 @@ export default function WorkoutChart({ sessions }: Props) {
     duration: "Min",
   };
 
-  const totalStr =
+  // Header display: selected bar value vs. period total
+  const displayValue =
+    selectedIndex !== null ? barData[selectedIndex]?.value ?? 0 : periodTotal;
+
+  const displayValueStr =
     metric === "volume"
-      ? periodTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })
-      : periodTotal.toLocaleString();
+      ? displayValue.toLocaleString(undefined, { maximumFractionDigits: 0 })
+      : displayValue.toLocaleString();
+
+  const displayLabel =
+    selectedIndex !== null
+      ? `week of ${weekLabels[selectedIndex]}`
+      : "this period";
 
   return (
     <View style={[styles.card, { backgroundColor: colors.surface }]}>
@@ -134,13 +158,13 @@ export default function WorkoutChart({ sessions }: Props) {
       <View style={styles.headerRow}>
         <View>
           <Text style={[styles.totalValue, { color: colors.text }]}>
-            {totalStr}{" "}
+            {displayValueStr}{" "}
             <Text style={[styles.totalUnit, { color: colors.textSecondary }]}>
               {metricLabels[metric]}
             </Text>
           </Text>
           <Text style={[styles.periodLabel, { color: colors.textSecondary }]}>
-            this period
+            {displayLabel}
           </Text>
         </View>
 
@@ -166,7 +190,7 @@ export default function WorkoutChart({ sessions }: Props) {
 
       {/* ── Bar chart ── */}
       <BarChart
-        data={barData}
+        data={coloredBarData}
         width={chartBodyWidth}
         barWidth={barWidth}
         spacing={barSpacing}
