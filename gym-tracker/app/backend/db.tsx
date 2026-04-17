@@ -87,13 +87,16 @@ export const db = {
   uploadAvatar: async (userId: string, uri: string): Promise<{ url: string | null; error: string | null }> => {
     if (!useSupabase()) return { url: null, error: "Requires internet connection" };
     try {
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const ext = uri.split(".").pop()?.split("?")[0] ?? "jpg";
+      const ext = (uri.split(".").pop()?.split("?")[0]?.toLowerCase()) ?? "jpg";
+      const mimeType = ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : "image/jpeg";
       const path = `${userId}/avatar.${ext}`;
+      // Use FormData instead of fetch().blob() — fetch() on local file:// / content://
+      // URIs is unreliable on Android and often returns an empty blob.
+      const formData = new FormData();
+      formData.append("file", { uri, name: `avatar.${ext}`, type: mimeType } as any);
       const { error: uploadError } = await supabase.storage
         .from("avatars")
-        .upload(path, blob, { upsert: true, contentType: blob.type || "image/jpeg" });
+        .upload(path, formData, { upsert: true, contentType: mimeType });
       if (uploadError) return { url: null, error: uploadError.message };
       const { data } = supabase.storage.from("avatars").getPublicUrl(path);
       // Bust cache by appending a timestamp
