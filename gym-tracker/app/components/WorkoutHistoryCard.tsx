@@ -1,5 +1,5 @@
 import { memo, useState } from "react";
-import { Alert, Modal, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Modal, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useRouter } from "expo-router";
 import { db } from "../backend/db";
@@ -15,6 +15,7 @@ type WorkoutHistoryCardProps = {
   exerciseCount: number;
   totalVolume: number;
   notes: string | null;
+  photo_url?: string | null;
   exerciseNames?: string[];
   onDelete?: (sessionId: number) => void;
   onEditWorkout?: (sessionId: number) => void;
@@ -62,6 +63,7 @@ const WorkoutHistoryCard = memo(function WorkoutHistoryCard({
   exerciseCount,
   totalVolume,
   notes,
+  photo_url,
   exerciseNames = [],
   onDelete,
   onEditWorkout,
@@ -184,6 +186,10 @@ const WorkoutHistoryCard = memo(function WorkoutHistoryCard({
         <Text style={[styles.notes, { color: colors.textTertiary }]} numberOfLines={2}>{notes}</Text>
       ) : null}
 
+      {photo_url ? (
+        <Image source={{ uri: photo_url }} style={styles.progressPhoto} resizeMode="cover" />
+      ) : null}
+
       {/* ── Action sheet ── */}
       <Modal visible={menuOpen} transparent animationType="slide" onRequestClose={() => setMenuOpen(false)}>
         <Pressable style={styles.overlay} onPress={() => setMenuOpen(false)}>
@@ -262,6 +268,13 @@ const styles = StyleSheet.create({
   exerciseName: { fontSize: 13 },
   moreText: { fontSize: 12, marginTop: 2 },
   notes: { fontSize: 12, fontStyle: "italic", marginTop: 6 },
+  progressPhoto: {
+    width: "100%",
+    height: 220,
+    borderRadius: 10,
+    marginTop: 10,
+    overflow: "hidden",
+  },
 
   // Action sheet
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },

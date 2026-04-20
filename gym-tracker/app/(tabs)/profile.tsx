@@ -212,6 +212,7 @@ export default function ProfileScreen() {
           start_time: s.start_time,
           end_time: s.end_time,
           notes: s.notes,
+          photo_url: s.photo_url ?? null,
           exerciseCount: exs.length,
           totalVolume: sessionVolume,
           totalReps: sessionReps,

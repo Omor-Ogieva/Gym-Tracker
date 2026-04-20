@@ -10,6 +10,7 @@ export type SessionWithMeta = {
   start_time: string;
   end_time: string | null;
   notes: string | null;
+  photo_url: string | null;
   exerciseCount: number;
   totalVolume: number;
   totalReps: number;
@@ -51,6 +52,7 @@ const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions, onDelete
           exerciseCount={session.exerciseCount}
           totalVolume={session.totalVolume}
           notes={session.notes}
+          photo_url={session.photo_url}
           exerciseNames={session.exerciseNames}
           onDelete={onDelete}
           onEditWorkout={onEditWorkout}

@@ -106,6 +106,32 @@ export const db = {
     }
   },
 
+  uploadProgressPhoto: async (userId: string, sessionId: number, uri: string): Promise<{ url: string | null; error: string | null }> => {
+    if (!useSupabase()) return { url: null, error: "Requires internet connection" };
+    try {
+      const ext = (uri.split(".").pop()?.split("?")[0]?.toLowerCase()) ?? "jpg";
+      const mimeType = ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : "image/jpeg";
+      const path = `${userId}/${sessionId}.${ext}`;
+      const formData = new FormData();
+      formData.append("file", { uri, name: `progress.${ext}`, type: mimeType } as any);
+      const { error: uploadError } = await supabase.storage
+        .from("progress-photos")
+        .upload(path, formData, { upsert: true, contentType: mimeType });
+      if (uploadError) return { url: null, error: uploadError.message };
+      const { data } = supabase.storage.from("progress-photos").getPublicUrl(path);
+      return { url: `${data.publicUrl}?t=${Date.now()}`, error: null };
+    } catch (e: any) {
+      return { url: null, error: e.message ?? "Upload failed" };
+    }
+  },
+
+  updateSessionPhotoUrl: async (sessionId: number, photoUrl: string) => {
+    if (useSupabase()) {
+      return supabase.from("workout_sessions").update({ photo_url: photoUrl }).eq("session_id", sessionId);
+    }
+    return localDb.updateSessionPhotoUrl(sessionId, photoUrl);
+  },
+
   changePassword: async (newPassword: string) => {
     if (useSupabase()) {
       return supabase.auth.updateUser({ password: newPassword });

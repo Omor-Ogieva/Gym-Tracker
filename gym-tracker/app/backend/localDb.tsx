@@ -40,6 +40,7 @@ type WorkoutSession = {
   start_time: string;         // time (HH:MM:SS)
   end_time: string | null;    // time (HH:MM:SS)
   notes: string | null;
+  photo_url: string | null;
   created_at: string;
   user_id: string;
 };
@@ -302,6 +303,7 @@ export const localDb = {
       start_time: now.toTimeString().split(" ")[0],
       end_time: null,
       notes: null,
+      photo_url: null,
       created_at: now.toISOString(),
       user_id: params.user_id,
     };
@@ -346,6 +348,14 @@ export const localDb = {
   updateWorkoutSession: async (sessionId: number, updates: { notes?: string | null; session_name?: string }) => {
     localWorkoutSessions = localWorkoutSessions.map((s) =>
       s.session_id === sessionId ? { ...s, ...updates } : s
+    );
+    return { error: null };
+  },
+
+  // Save a progress photo URI (local file URI for offline sessions)
+  updateSessionPhotoUrl: async (sessionId: number, photoUrl: string) => {
+    localWorkoutSessions = localWorkoutSessions.map((s) =>
+      s.session_id === sessionId ? { ...s, photo_url: photoUrl } : s
     );
     return { error: null };
   },
@@ -463,6 +473,7 @@ export const localDb = {
       start_time: now.toTimeString().split(" ")[0],
       end_time: null,
       notes: null,
+      photo_url: null,
       created_at: now.toISOString(),
       user_id: userId,
     };

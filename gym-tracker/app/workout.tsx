@@ -4,6 +4,7 @@ import {
   ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import ConfirmModal from "./components/ConfirmModal";
+import ProgressPhotoModal from "./components/ProgressPhotoModal";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useActiveWorkout } from "./utils/ActiveWorkoutContext";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -61,6 +62,9 @@ export default function WorkoutScreen() {
   }, [navigation, session, handleMinimize]);
 
   const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const finishedSessionId = useRef<number | null>(null);
   const [setOptionsVisible, setSetOptionsVisible] = useState(false);
   const [selectedSet, setSelectedSet] = useState<any>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<number | null>(null);
@@ -279,6 +283,8 @@ export default function WorkoutScreen() {
     setSession((prev: any) => ({ ...prev, end_time: new Date().toISOString() }));
     cancelRestDoneNotification();
     clearActiveWorkout();
+    finishedSessionId.current = session.session_id;
+
     try {
       const { data: userData } = await db.getUser();
       const userId = userData?.user?.id;
@@ -295,14 +301,39 @@ export default function WorkoutScreen() {
           Alert.alert(
             "New PRs!",
             prs.map((p) => `${p.exerciseName} (${p.type === "both" ? "weight & volume" : p.type})`).join("\n"),
-            [{ text: "OK", onPress: () => router.back() }]
+            [{ text: "OK", onPress: () => setShowPhotoModal(true) }]
           );
           return;
         }
       }
     } catch (_) {}
-    router.back();
+    setShowPhotoModal(true);
   }, 1000);
+
+  const handleProgressPhoto = useCallback(async (uri: string) => {
+    const sessionId = finishedSessionId.current;
+    if (!sessionId) { setShowPhotoModal(false); router.back(); return; }
+    setPhotoUploading(true);
+    try {
+      const { data: userData } = await db.getUser();
+      const userId = userData?.user?.id;
+      if (userId) {
+        const { url, error: uploadError } = await db.uploadProgressPhoto(userId, sessionId, uri);
+        if (uploadError) {
+          // Non-fatal: warn but still navigate
+          Alert.alert("Photo Upload Failed", uploadError, [{ text: "OK" }]);
+        } else if (url) {
+          await db.updateSessionPhotoUrl(sessionId, url);
+        }
+      } else {
+        // Offline or unauthenticated — store local URI so it's still visible
+        await db.updateSessionPhotoUrl(sessionId, uri);
+      }
+    } catch (_) {}
+    setPhotoUploading(false);
+    setShowPhotoModal(false);
+    router.back();
+  }, [router]);
 
   const discardWorkout = useGuardedPress(() => {
     if (!session) return;
@@ -644,6 +675,13 @@ export default function WorkoutScreen() {
         icon="trash-outline"
         onConfirm={handleConfirmDiscard}
         onCancel={() => setShowDiscardModal(false)}
+      />
+
+      <ProgressPhotoModal
+        visible={showPhotoModal}
+        isUploading={photoUploading}
+        onPhoto={handleProgressPhoto}
+        onSkip={() => { setShowPhotoModal(false); router.back(); }}
       />
     </KeyboardAvoidingView>
   );
