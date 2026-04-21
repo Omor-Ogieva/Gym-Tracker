@@ -79,6 +79,13 @@
 | US-31 | As a user, I want to switch between light and dark themes so that the app is comfortable to use in any lighting condition. | Medium |
 | US-32 | As a user, I want to choose between pounds (lbs) and kilograms (kg) so that weights are displayed in my preferred unit. | Medium |
 
+### Epic 6 — Progress Photos
+
+| ID | User Story | Priority |
+|----|-----------|----------|
+| US-36 | As a user, I want to optionally take or pick a progress photo when I finish a workout so that I can visually track my physique changes over time. | Medium |
+| US-37 | As a user, I want to see my progress photo displayed on my workout history card so that I can associate visual progress with specific training sessions. | Medium |
+
 ---
 
 ### Feature Descriptions
@@ -108,6 +115,16 @@ Each exercise card in both the active workout screen and the routine editor expo
 #### Feature: Routine Options Menu (3-dot) on Routine List
 
 Each routine card on the Workouts tab exposes an ellipsis (`···`) icon that opens a bottom sheet with four actions: **Edit Routine** (opens a centered modal pre-filled with name and description, saved via `updateRoutine`), **Move Up** / **Move Down** (swaps the routine's position in the list and batch-persists `routine_order` to the DB; boundaries are visually dimmed), and **Delete Routine** (delegates to the existing `ConfirmModal` + `deleteRoutine` flow).
+
+#### Feature: Progress Photo on Workout Finish
+
+When the user taps "Finish Workout," a bottom-sheet modal (`ProgressPhotoModal`) slides up before the screen navigates away. The modal offers three options: **Take Photo** (device camera, `aspect: [3, 4]`), **Choose from Library** (photo picker), and **Skip**. While the upload is in progress, the modal shows an `ActivityIndicator` and cannot be dismissed. The photo is uploaded to the Supabase Storage bucket `progress-photos` under the path `{userId}/{sessionId}.{ext}` (mirroring the existing avatar upload pattern). The resulting public URL is written back to the `photo_url` column on the `workout_sessions` row. If the user is offline, the local file URI is stored directly so the photo still renders in history without internet. The photo is displayed as a full-width (220 px tall, `borderRadius: 10`, `resizeMode="cover"`) image at the bottom of each `WorkoutHistoryCard` in the Profile tab.
+
+**Supabase setup required:**
+
+- SQL: `ALTER TABLE workout_sessions ADD COLUMN photo_url TEXT;`
+- Storage: bucket `progress-photos`, public ON
+- RLS: INSERT + UPDATE policies scoped to `(storage.foldername(name))[1] = auth.uid()::text`; public SELECT policy
 
 #### Feature: Active Workout Finish Fix
 
@@ -191,7 +208,18 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | BL-34 | Push notifications for rest timer (background alert when countdown ends) | DONE |
 | BL-49 | Past workout editing — full-screen editor for reps, sets, exercises, name, notes | DONE |
 
+### Sprint 6 — Progress Photos (DONE)
+
+| ID | Item | Status |
+|----|------|--------|
+| BL-50 | `ProgressPhotoModal` component — camera / library / skip bottom sheet | DONE |
+| BL-51 | `uploadProgressPhoto` in `db.tsx` — FormData upload to `progress-photos` Supabase Storage bucket | DONE |
+| BL-52 | `updateSessionPhotoUrl` in `db.tsx` + `localDb.tsx` — persist URL to `workout_sessions.photo_url` | DONE |
+| BL-53 | Wire photo modal into `finishWorkout()` flow in `workout.tsx` | DONE |
+| BL-54 | Display progress photo in `WorkoutHistoryCard` on Profile tab | DONE |
+
 ### Backlog — Future Work
+
 | ID | Item | Status | Notes |
 |----|------|--------|-------|
 | BL-34 | Push notifications for rest timer completion | DONE | `expo-notifications`; fires a local notification when countdown reaches 0 |
@@ -292,7 +320,8 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 └───────┬────────┘              │    start_time          │
         │ 1                     │    end_time (opt.)     │
         │ has many              │    notes (opt.)        │
-        │ n                     │    created_at          │
+        │ n                     │    photo_url (opt.)    │
+                                │    created_at          │
 ┌───────▼────────────────┐      └───────────┬────────────┘
 │   RoutineExercises     │                  │ 1
 ├────────────────────────┤                  │ has many
@@ -410,9 +439,17 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | `getWorkoutSession(sessionId)` | GET | Single session by ID |
 | `getActiveSession(userId)` | GET | In-progress session (no `end_time`) |
 | `updateWorkoutSession(sessionId, updates)` | PATCH | Update session name or notes |
+| `updateSessionPhotoUrl(sessionId, photoUrl)` | PATCH | Persist progress photo URL to `photo_url` column; falls back to local store when offline |
 | `deleteWorkoutSession(sessionId)` | DELETE | Discard a session and all child records |
 | `getBatchSessionExercises(sessionIds)` | GET | All exercises for a list of sessions in one request |
 | `getBatchSessionExerciseSets(exerciseIds)` | GET | All sets for a list of exercises in one request |
+
+#### Storage
+
+| Function                                      | Operation | Description                                                                                                                               |
+|-----------------------------------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| `uploadAvatar(userId, uri)`                   | PUT       | Upload profile photo to `avatars/{userId}` in Supabase Storage; returns public URL                                                        |
+| `uploadProgressPhoto(userId, sessionId, uri)` | PUT       | Upload workout progress photo to `progress-photos/{userId}/{sessionId}.{ext}`; returns public URL with cache-buster; requires internet    |
 
 #### Session Exercises & Sets
 | Function | Operation | Description |
@@ -682,6 +719,15 @@ HTML report is generated at `coverage/lcov-report/index.html`.
 | 1 | Start a workout from a routine | Active workout screen opens; minimized bar registers the session | Pass |
 | 2 | Log at least one set, tap "Finish Workout" | Session saved; active workout screen closes | Pass |
 | 3 | Verify minimized workout bar is no longer visible | Bar is dismissed; navigates to previous screen cleanly | Pass |
+
+#### TC-23: Progress Photo — Capture and Display on History Card
+
+| Step | Action | Expected Result | Pass/Fail |
+|------|--------|-----------------|-----------|
+| 1 | Finish a workout session | Progress photo bottom sheet appears with Camera / Library / Skip options | Pass |
+| 2 | Tap "Take Photo", take a photo | Camera opens; after capture, uploading spinner shows briefly; modal dismisses; app navigates back | Pass |
+| 3 | Open Profile tab and locate the finished workout history card | The progress photo is displayed below the exercise list on the card | Pass |
+| 4 | Finish another workout and tap "Skip" | No photo prompt lingers; app navigates back immediately; history card shows no photo | Pass |
 
 ---
 
