@@ -226,7 +226,7 @@ export default function RoutineScreen() {
     const { data: session, error: err } = await db.startWorkoutFromRoutine(routineId, user.id);
     if (err) { setError(err.message); setStartingWorkout(false); return; }
     setStartingWorkout(false);
-    router.push({ pathname: "/workout", params: { sessionId: String(session.session_id) } });
+    router.replace({ pathname: "/workout", params: { sessionId: String(session.session_id) } });
   }, 1000);
 
   const handleDeleteRoutine = useGuardedPress(async () => {
@@ -277,15 +277,7 @@ export default function RoutineScreen() {
           <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
             {displayName}
           </Text>
-          <View style={styles.headerRightRow}>
-            <Pressable
-              style={[styles.startPill, { backgroundColor: colors.primary }, startingWorkout && { opacity: 0.6 }]}
-              onPress={handleStartWorkout}
-              disabled={startingWorkout}
-            >
-              <Ionicons name="play" size={13} color="#fff" style={{ marginRight: 4 }} />
-              <Text style={styles.startPillText}>{startingWorkout ? "Starting…" : "Start"}</Text>
-            </Pressable>
+          <View style={styles.headerRight}>
             <Pressable onPress={() => setViewMenuOpen(true)} hitSlop={8} style={styles.menuBtn}>
               <Ionicons name="ellipsis-vertical" size={20} color={colors.textSecondary} />
             </Pressable>
@@ -330,10 +322,22 @@ export default function RoutineScreen() {
           </View>
         )}
 
-        {/* ── View mode: description pill ── */}
-        {!isEditing && displayDesc ? (
-          <Text style={[styles.viewDesc, { color: colors.textSecondary }]}>{displayDesc}</Text>
-        ) : null}
+        {/* ── View mode: description + Start button ── */}
+        {!isEditing && (
+          <>
+            {displayDesc ? (
+              <Text style={[styles.viewDesc, { color: colors.textSecondary }]}>{displayDesc}</Text>
+            ) : null}
+            <Pressable
+              style={[styles.startBtn, { backgroundColor: colors.primary }, startingWorkout && { opacity: 0.6 }]}
+              onPress={handleStartWorkout}
+              disabled={startingWorkout}
+            >
+              <Ionicons name="play" size={16} color="#fff" style={{ marginRight: 6 }} />
+              <Text style={styles.startBtnText}>{startingWorkout ? "Starting…" : "Start Routine"}</Text>
+            </Pressable>
+          </>
+        )}
 
         {/* ── Empty state ── */}
         {exercises.length === 0 && (
@@ -676,7 +680,6 @@ const styles = StyleSheet.create({
   headerBack: { width: 64, alignItems: "flex-start" },
   headerTitle: { flex: 1, fontSize: 17, fontWeight: "700", textAlign: "center" },
   headerRight: { width: 64, alignItems: "flex-end" },
-  headerRightRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   cancelText: { fontSize: 16, fontWeight: "500" },
   donePill: {
     paddingHorizontal: 12,
@@ -684,14 +687,14 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   donePillText: { color: "#fff", fontSize: 14, fontWeight: "700" },
-  startPill: {
+  startBtn: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
+    justifyContent: "center",
+    borderRadius: 14,
+    paddingVertical: 14,
   },
-  startPillText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  startBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
   menuBtn: { padding: 2 },
 
   scrollContent: { paddingVertical: 12, paddingHorizontal: 16, gap: 12, paddingBottom: 60 },
