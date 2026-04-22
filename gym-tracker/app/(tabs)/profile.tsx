@@ -1,12 +1,13 @@
 import { useCallback, useRef, useState } from "react";
-import { ActivityIndicator, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Image, Modal, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db, isOnline } from "../backend/db";
 import { useTheme } from "../theme/ThemeContext";
 import { useUnits } from "../utils/units";
-import WorkoutHistoryList, { SessionWithMeta } from "../components/WorkoutHistoryList";
+import WorkoutHistoryCard from "../components/WorkoutHistoryCard";
+import { SessionWithMeta } from "../components/WorkoutHistoryList";
 import WorkoutChart from "../components/WorkoutChart";
 
 // ─── Stat definitions ─────────────────────────────────────────────────────────
@@ -327,13 +328,8 @@ export default function ProfileScreen() {
     );
   }
 
-  return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingBottom: 80 }}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadProfile(true)} tintColor={colors.primary} />}
-    >
+  const listHeader = (
+    <>
       {/* ── Top bar ── */}
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         <Text style={[styles.username, { color: colors.text }]}>
@@ -449,15 +445,53 @@ export default function ProfileScreen() {
       {/* ── Progress chart ── */}
       {sessions.length > 0 && <WorkoutChart sessions={sessions} />}
 
-      {/* ── Workout history ── */}
+      {/* ── Workout history header ── */}
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Workouts</Text>
       </View>
-      <View style={{ marginHorizontal: 16 }}>
-        <WorkoutHistoryList sessions={sessions} onDelete={handleDeleteSession} onEditWorkout={handleEditWorkout} />
-      </View>
+    </>
+  );
 
-      {/* ── Stat customizer modal ── */}
+  const listEmpty = (
+    <View style={{ alignItems: "center", paddingVertical: 48, gap: 10, marginHorizontal: 16 }}>
+      <Text style={{ fontSize: 48 }}>🏋️</Text>
+      <Text style={{ fontSize: 18, fontWeight: "700", color: colors.textSecondary }}>No workouts yet</Text>
+      <Text style={{ fontSize: 14, color: colors.textTertiary, textAlign: "center" }}>
+        Complete your first workout to see it here
+      </Text>
+    </View>
+  );
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <FlatList
+        data={sessions}
+        keyExtractor={(item) => String(item.session_id)}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 80 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadProfile(true)} tintColor={colors.primary} />}
+        ListHeaderComponent={listHeader}
+        ListEmptyComponent={listEmpty}
+        renderItem={({ item }) => (
+          <View style={{ marginHorizontal: 16 }}>
+            <WorkoutHistoryCard
+              session_id={item.session_id}
+              sessionName={item.session_name}
+              sessionDate={item.session_date}
+              startTime={item.start_time}
+              endTime={item.end_time}
+              exerciseCount={item.exerciseCount}
+              totalVolume={item.totalVolume}
+              notes={item.notes}
+              photo_url={item.photo_url}
+              exerciseNames={item.exerciseNames}
+              onDelete={handleDeleteSession}
+              onEditWorkout={handleEditWorkout}
+            />
+          </View>
+        )}
+      />
       <StatCustomizerModal
         visible={customizerOpen}
         selected={selectedStats}
@@ -465,7 +499,7 @@ export default function ProfileScreen() {
         onSave={handleSaveStats}
         onClose={() => setCustomizerOpen(false)}
       />
-    </ScrollView>
+    </View>
   );
 }
 
@@ -491,7 +525,7 @@ function StatCustomizerModal({
   // Sync draft when modal opens
   const handleOpen = useCallback(() => setDraft(selected), [selected]);
 
-  const toggleDraft = (id: StatId) => {
+  const toggleDraft = useCallback((id: StatId) => {
     setDraft((prev) => {
       if (prev.includes(id)) {
         if (prev.length === 1) return prev; // need at least 1
@@ -500,7 +534,7 @@ function StatCustomizerModal({
       if (prev.length >= 3) return prev; // max 3
       return [...prev, id];
     });
-  };
+  }, []);
 
   const atMax = draft.length >= 3;
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
@@ -191,7 +191,7 @@ export default function RoutineScreen() {
     await reloadSetsForExercise(routineExerciseId);
   }, 300);
 
-  const handleDeleteSet = async (routineSetId: number, routineExerciseId: number) => {
+  const handleDeleteSet = useCallback(async (routineSetId: number, routineExerciseId: number) => {
     setExerciseSets((prev) => ({
       ...prev,
       [routineExerciseId]: (prev[routineExerciseId] ?? []).filter(
@@ -200,7 +200,7 @@ export default function RoutineScreen() {
     }));
     const { error: err } = await db.deleteRoutineExerciseSet(routineSetId);
     if (err) { setError(err.message); reloadSetsForExercise(routineExerciseId); }
-  };
+  }, [reloadSetsForExercise]);
 
   const handleUpdateSet = useCallback(async (
     routineSetId: number,
@@ -558,7 +558,7 @@ export default function RoutineScreen() {
 
 // ─── ViewSetRow (read-only) ───────────────────────────────────────────────────
 
-function ViewSetRow({ set, colors }: { set: any; colors: any }) {
+const ViewSetRow = memo(function ViewSetRow({ set, colors }: { set: any; colors: any }) {
   const isWarmup = set.is_warmup === true;
   return (
     <View style={[rowStyles.row, { backgroundColor: isWarmup ? colors.warningLight + "55" : "transparent", borderBottomColor: colors.border }]}>
@@ -575,11 +575,11 @@ function ViewSetRow({ set, colors }: { set: any; colors: any }) {
       </Text>
     </View>
   );
-}
+});
 
 // ─── TemplateSetRow (editable) ────────────────────────────────────────────────
 
-function TemplateSetRow({
+const TemplateSetRow = memo(function TemplateSetRow({
   set,
   routineExerciseId,
   onUpdate,
@@ -663,7 +663,7 @@ function TemplateSetRow({
       </Pressable>
     </View>
   );
-}
+});
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 

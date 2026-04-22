@@ -1,4 +1,4 @@
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { FlatList, Modal, Pressable, Text, TextInput, View } from "react-native";
 import { useEffect, useState } from "react";
 import { useTheme } from "../theme/ThemeContext";
 import exercisesData from "../../assets/data/exercises.json";
@@ -132,16 +132,80 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
           </Pressable>
         </View>
 
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}>
-          {search.length === 0 && (
+        <FlatList
+          data={filtered.slice(0, 50)}
+          keyExtractor={(ex) => ex.id}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 40 }}
+          ListHeaderComponent={search.length === 0 ? (
             <Text style={{ textAlign: "center", color: colors.textTertiary, marginTop: 40, fontSize: 15 }}>
               Type to search 500+ exercises
             </Text>
-          )}
-
-          {filtered.slice(0, 50).map((ex) => (
+          ) : null}
+          ListFooterComponent={
+            <>
+              {filtered.length > 50 && (
+                <Text style={{ textAlign: "center", color: colors.textTertiary, paddingVertical: 12 }}>
+                  Showing 50 of {filtered.length} — refine your search
+                </Text>
+              )}
+              {search.length > 0 && filtered.length === 0 && !showCreateForm && (
+                <View style={{ alignItems: "center", marginTop: 32, paddingHorizontal: 24 }}>
+                  <Text style={{ color: colors.textTertiary, fontSize: 15, marginBottom: 16 }}>
+                    No exercises found for "{search}"
+                  </Text>
+                  <Pressable
+                    onPress={() => { setNewName(search); setShowCreateForm(true); }}
+                    style={{ backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10 }}
+                  >
+                    <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>+ Create "{search}"</Text>
+                  </Pressable>
+                </View>
+              )}
+              {showCreateForm && (
+                <View style={{ padding: 20, gap: 12 }}>
+                  <Text style={{ fontSize: 16, fontWeight: "700", color: colors.text }}>New Exercise</Text>
+                  <TextInput
+                    style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, fontSize: 15, backgroundColor: colors.inputBackground, color: colors.text }}
+                    placeholder="Exercise name *"
+                    placeholderTextColor={colors.textTertiary}
+                    value={newName}
+                    onChangeText={setNewName}
+                  />
+                  <TextInput
+                    style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, fontSize: 15, backgroundColor: colors.inputBackground, color: colors.text }}
+                    placeholder="Primary muscle (optional)"
+                    placeholderTextColor={colors.textTertiary}
+                    value={newMuscle}
+                    onChangeText={setNewMuscle}
+                  />
+                  <TextInput
+                    style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, fontSize: 15, backgroundColor: colors.inputBackground, color: colors.text }}
+                    placeholder="Equipment (optional)"
+                    placeholderTextColor={colors.textTertiary}
+                    value={newEquip}
+                    onChangeText={setNewEquip}
+                  />
+                  <View style={{ flexDirection: "row", gap: 10 }}>
+                    <Pressable
+                      style={{ flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: colors.surfaceSecondary, alignItems: "center" }}
+                      onPress={() => setShowCreateForm(false)}
+                    >
+                      <Text style={{ fontWeight: "600", color: colors.textSecondary }}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      style={{ flex: 2, paddingVertical: 12, borderRadius: 8, backgroundColor: colors.primary, alignItems: "center" }}
+                      onPress={handleCreate}
+                    >
+                      <Text style={{ fontWeight: "700", color: "#fff" }}>Create & Add</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+            </>
+          }
+          renderItem={({ item: ex }) => (
             <Pressable
-              key={ex.id}
               onPress={() => handleSelect(ex)}
               style={({ pressed }) => ({
                 flexDirection: "row",
@@ -168,69 +232,8 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
               </View>
               <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 14 }}>+ Add</Text>
             </Pressable>
-          ))}
-
-          {filtered.length > 50 && (
-            <Text style={{ textAlign: "center", color: colors.textTertiary, paddingVertical: 12 }}>
-              Showing 50 of {filtered.length} — refine your search
-            </Text>
           )}
-
-          {search.length > 0 && filtered.length === 0 && !showCreateForm && (
-            <View style={{ alignItems: "center", marginTop: 32, paddingHorizontal: 24 }}>
-              <Text style={{ color: colors.textTertiary, fontSize: 15, marginBottom: 16 }}>
-                No exercises found for "{search}"
-              </Text>
-              <Pressable
-                onPress={() => { setNewName(search); setShowCreateForm(true); }}
-                style={{ backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10 }}
-              >
-                <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>+ Create "{search}"</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {showCreateForm && (
-            <View style={{ padding: 20, gap: 12 }}>
-              <Text style={{ fontSize: 16, fontWeight: "700", color: colors.text }}>New Exercise</Text>
-              <TextInput
-                style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, fontSize: 15, backgroundColor: colors.inputBackground, color: colors.text }}
-                placeholder="Exercise name *"
-                placeholderTextColor={colors.textTertiary}
-                value={newName}
-                onChangeText={setNewName}
-              />
-              <TextInput
-                style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, fontSize: 15, backgroundColor: colors.inputBackground, color: colors.text }}
-                placeholder="Primary muscle (optional)"
-                placeholderTextColor={colors.textTertiary}
-                value={newMuscle}
-                onChangeText={setNewMuscle}
-              />
-              <TextInput
-                style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, fontSize: 15, backgroundColor: colors.inputBackground, color: colors.text }}
-                placeholder="Equipment (optional)"
-                placeholderTextColor={colors.textTertiary}
-                value={newEquip}
-                onChangeText={setNewEquip}
-              />
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <Pressable
-                  style={{ flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: colors.surfaceSecondary, alignItems: "center" }}
-                  onPress={() => setShowCreateForm(false)}
-                >
-                  <Text style={{ fontWeight: "600", color: colors.textSecondary }}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  style={{ flex: 2, paddingVertical: 12, borderRadius: 8, backgroundColor: colors.primary, alignItems: "center" }}
-                  onPress={handleCreate}
-                >
-                  <Text style={{ fontWeight: "700", color: "#fff" }}>Create & Add</Text>
-                </Pressable>
-              </View>
-            </View>
-          )}
-        </ScrollView>
+        />
       </View>
     </Modal>
   );

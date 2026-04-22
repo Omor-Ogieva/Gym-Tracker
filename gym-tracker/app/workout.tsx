@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { memo, useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
@@ -689,7 +689,7 @@ export default function WorkoutScreen() {
 
 // ─── SetRow ──────────────────────────────────────────────────────────────────
 
-function SetRow({
+const SetRow = memo(function SetRow({
   set,
   sessionExerciseId,
   onUpdate,
@@ -850,7 +850,7 @@ function SetRow({
       </Pressable>
     </View>
   );
-}
+});
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
