@@ -3,7 +3,7 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { db, isOnline } from "../backend/db";
 import { useTheme } from "../theme/ThemeContext";
@@ -26,11 +26,6 @@ export default function WorkoutsScreen() {
   // Routine options bottom sheet
   const [routineOptionsVisible, setRoutineOptionsVisible] = useState(false);
   const [selectedRoutine, setSelectedRoutine] = useState<any>(null);
-
-  // Edit modal
-  const [editModalVisible, setEditModalVisible] = useState(false);
-  const [editName, setEditName] = useState("");
-  const [editDesc, setEditDesc] = useState("");
 
   // Delete confirm
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
@@ -83,28 +78,19 @@ export default function WorkoutsScreen() {
 
   // ── Edit ──
 
-  const openEditModal = useCallback(() => {
-    setEditName(selectedRoutine?.routine_name ?? "");
-    setEditDesc(selectedRoutine?.description ?? "");
-    setRoutineOptionsVisible(false);
-    setEditModalVisible(true);
-  }, [selectedRoutine]);
-
-  const handleSaveEdit = useGuardedPress(async () => {
-    if (!selectedRoutine || !editName.trim()) return;
-    const { error: err } = await db.updateRoutine(selectedRoutine.routine_id, {
-      routine_name: editName.trim(),
-      description: editDesc.trim() || null,
+  const openEditInScreen = useCallback(() => {
+    if (!selectedRoutine) return;
+    closeRoutineOptions();
+    router.push({
+      pathname: "/routine/[routineId]",
+      params: {
+        routineId: String(selectedRoutine.routine_id),
+        routineName: selectedRoutine.routine_name,
+        description: selectedRoutine.description ?? "",
+        mode: "edit",
+      },
     });
-    if (err) { setError(err.message); return; }
-    setRoutines((prev) => prev.map((r) =>
-      r.routine_id === selectedRoutine.routine_id
-        ? { ...r, routine_name: editName.trim(), description: editDesc.trim() || null }
-        : r
-    ));
-    setEditModalVisible(false);
-    setSelectedRoutine(null);
-  });
+  }, [selectedRoutine, closeRoutineOptions, router]);
 
   // ── Delete ──
 
@@ -136,7 +122,7 @@ export default function WorkoutsScreen() {
     closeRoutineOptions();
   }, [closeRoutineOptions]);
 
-  useEffect(() => { loadRoutines(); }, []);
+  useFocusEffect(useCallback(() => { loadRoutines(); }, []));
 
   const selectedIdx = routines.findIndex((r) => r.routine_id === selectedRoutine?.routine_id);
 
@@ -234,7 +220,11 @@ export default function WorkoutsScreen() {
                 onPress={() =>
                   router.push({
                     pathname: "/routine/[routineId]",
-                    params: { routineId: String(item.routine_id), routineName: item.routine_name },
+                    params: {
+                      routineId: String(item.routine_id),
+                      routineName: item.routine_name,
+                      description: item.description ?? "",
+                    },
                   })
                 }
               >
@@ -293,7 +283,7 @@ export default function WorkoutsScreen() {
             </Text>
 
             {/* Edit */}
-            <Pressable style={[modalStyles.option, { borderBottomColor: colors.border }]} onPress={openEditModal}>
+            <Pressable style={[modalStyles.option, { borderBottomColor: colors.border }]} onPress={openEditInScreen}>
               <View style={[modalStyles.iconWrap, { backgroundColor: colors.primaryLight }]}>
                 <Ionicons name="pencil-outline" size={16} color={colors.primary} />
               </View>
@@ -352,45 +342,6 @@ export default function WorkoutsScreen() {
               <Text style={[modalStyles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
             </Pressable>
           </View>
-        </Pressable>
-      </Modal>
-
-      {/* ── Edit routine modal ── */}
-      <Modal visible={editModalVisible} transparent animationType="fade" onRequestClose={() => setEditModalVisible(false)}>
-        <Pressable style={modalStyles.editOverlay} onPress={() => setEditModalVisible(false)}>
-          <Pressable style={[modalStyles.editCard, { backgroundColor: colors.surface }]} onPress={() => {}}>
-            <Text style={[modalStyles.editTitle, { color: colors.text }]}>Edit Routine</Text>
-            <TextInput
-              style={[modalStyles.editInput, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
-              placeholder="Routine name"
-              placeholderTextColor={colors.textTertiary}
-              value={editName}
-              onChangeText={setEditName}
-              autoFocus
-            />
-            <TextInput
-              style={[modalStyles.editInput, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
-              placeholder="Description (optional)"
-              placeholderTextColor={colors.textTertiary}
-              value={editDesc}
-              onChangeText={setEditDesc}
-            />
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
-              <Pressable
-                style={[modalStyles.editCancelBtn, { backgroundColor: colors.surfaceSecondary }]}
-                onPress={() => setEditModalVisible(false)}
-              >
-                <Text style={[modalStyles.editCancelText, { color: colors.textSecondary }]}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[modalStyles.editSaveBtn, { backgroundColor: colors.primary }, !editName.trim() && { opacity: 0.5 }]}
-                onPress={handleSaveEdit}
-                disabled={!editName.trim()}
-              >
-                <Text style={modalStyles.editSaveText}>Save</Text>
-              </Pressable>
-            </View>
-          </Pressable>
         </Pressable>
       </Modal>
 
@@ -520,27 +471,4 @@ const modalStyles = StyleSheet.create({
   },
   cancelText: { fontSize: 16, fontWeight: "600" },
 
-  // Edit modal
-  editOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-  },
-  editCard: {
-    borderRadius: 20,
-    padding: 20,
-    gap: 12,
-  },
-  editTitle: { fontSize: 17, fontWeight: "700", marginBottom: 4 },
-  editInput: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
-  },
-  editCancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center" },
-  editCancelText: { fontSize: 15, fontWeight: "600" },
-  editSaveBtn: { flex: 2, paddingVertical: 12, borderRadius: 10, alignItems: "center" },
-  editSaveText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 });

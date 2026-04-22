@@ -13,29 +13,49 @@ import ConfirmModal from "../components/ConfirmModal";
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
-export default function RoutineEditorScreen() {
+export default function RoutineScreen() {
   const router = useRouter();
-  const { routineId: routineIdParam, routineName: routineNameParam } =
-    useLocalSearchParams<{ routineId: string; routineName: string }>();
+  const {
+    routineId: routineIdParam,
+    routineName: routineNameParam,
+    description: descriptionParam,
+    mode: modeParam,
+  } = useLocalSearchParams<{ routineId: string; routineName: string; description?: string; mode?: string }>();
   const routineId = parseInt(routineIdParam, 10);
   const { colors } = useTheme();
 
   const scrollRef = useRef<ScrollView>(null);
 
-  const [routineName] = useState(routineNameParam ?? "Routine");
+  // ── Mode ──
+  const [isEditing, setIsEditing] = useState(modeParam === "edit");
+
+  // ── Display state (view mode shows these) ──
+  const [displayName, setDisplayName] = useState(routineNameParam ?? "Routine");
+  const [displayDesc, setDisplayDesc] = useState(descriptionParam ?? "");
+
+  // ── Edit state (edit mode uses these) ──
+  const [editableName, setEditableName] = useState(routineNameParam ?? "Routine");
+  const [editableDesc, setEditableDesc] = useState(descriptionParam ?? "");
+
+  // ── Data ──
   const [exercises, setExercises] = useState<any[]>([]);
   const [exerciseSets, setExerciseSets] = useState<Record<number, any[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // ── UI flags ──
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [showDeleteRoutine, setShowDeleteRoutine] = useState(false);
   const [startingWorkout, setStartingWorkout] = useState(false);
   const [exerciseOptionsVisible, setExerciseOptionsVisible] = useState(false);
   const [selectedExerciseForOptions, setSelectedExerciseForOptions] = useState<any>(null);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
+
   const exercisePickerModeRef = useRef<"add" | "replace">("add");
   const replaceTargetRef = useRef<any>(null);
 
-  // Load all exercises + all their sets in parallel
+  // ─── Data loading ─────────────────────────────────────────────────────────
+
   const loadData = async () => {
     setLoading(true);
     const { data: exData, error: exErr } = await db.getRoutineExercises(routineId);
@@ -59,6 +79,48 @@ export default function RoutineEditorScreen() {
     setExerciseSets((prev) => ({ ...prev, [routineExerciseId]: data ?? [] }));
   };
 
+  useEffect(() => { loadData(); }, []);
+
+  // ─── Mode transitions ──────────────────────────────────────────────────────
+
+  const enterEditMode = () => {
+    setViewMenuOpen(false);
+    setEditableName(displayName);
+    setEditableDesc(displayDesc);
+    setIsEditing(true);
+  };
+
+  const exitEditMode = () => {
+    if (modeParam === "edit") {
+      router.back();
+    } else {
+      // Revert unsaved name/desc changes and return to view
+      setEditableName(displayName);
+      setEditableDesc(displayDesc);
+      setIsEditing(false);
+    }
+  };
+
+  const handleSaveNameDesc = async () => {
+    const trimmedName = editableName.trim();
+    if (!trimmedName) return;
+    const trimmedDesc = editableDesc.trim();
+    if (trimmedName === displayName && trimmedDesc === displayDesc) return;
+    await db.updateRoutine(routineId, {
+      routine_name: trimmedName,
+      description: trimmedDesc || null,
+    });
+    setDisplayName(trimmedName);
+    setDisplayDesc(trimmedDesc);
+  };
+
+  const handleDoneEditing = async () => {
+    await handleSaveNameDesc();
+    setIsEditing(false);
+  };
+
+  // ─── Exercise handlers ─────────────────────────────────────────────────────
+
   const handleAddExercise = useGuardedPress(async (exercise: any) => {
     setShowExercisePicker(false);
     const { error: err } = await db.insertRoutineExercise({
@@ -68,7 +130,6 @@ export default function RoutineEditorScreen() {
       exercise_order: exercises.length === 0 ? 1 : Math.max(...exercises.map((e) => e.exercise_order)) + 1,
     });
     if (err) { setError(err.message); return; }
-    // Reload so we get the new routine_exercise_id
     await loadData();
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
   });
@@ -146,7 +207,6 @@ export default function RoutineEditorScreen() {
     routineExerciseId: number,
     updates: { target_reps?: number | null; target_weight?: number | null; is_warmup?: boolean }
   ) => {
-    // Optimistic update for warmup toggle
     if ("is_warmup" in updates) {
       setExerciseSets((prev) => ({
         ...prev,
@@ -176,9 +236,8 @@ export default function RoutineEditorScreen() {
     router.back();
   });
 
-  useEffect(() => { loadData(); }, []);
+  // ─── Loading ───────────────────────────────────────────────────────────────
 
-  // ── Loading ──
   if (loading) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
@@ -187,30 +246,52 @@ export default function RoutineEditorScreen() {
     );
   }
 
+  // ─── Render ────────────────────────────────────────────────────────────────
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       {/* ── Header ── */}
-      <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => router.back()} hitSlop={8} style={styles.headerBack}>
-          <Ionicons name="chevron-down" size={22} color={colors.textSecondary} />
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-          {routineName}
-        </Text>
-        <View style={styles.headerRight}>
-          <Pressable
-            style={[styles.startPill, { backgroundColor: colors.primary }, startingWorkout && { opacity: 0.6 }]}
-            onPress={handleStartWorkout}
-            disabled={startingWorkout}
-          >
-            <Ionicons name="play" size={13} color="#fff" style={{ marginRight: 4 }} />
-            <Text style={styles.startPillText}>{startingWorkout ? "Starting…" : "Start"}</Text>
+      {isEditing ? (
+        <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+          <Pressable onPress={exitEditMode} hitSlop={8} style={styles.headerBack}>
+            <Text style={[styles.cancelText, { color: colors.primary }]}>Cancel</Text>
           </Pressable>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Routine</Text>
+          <View style={styles.headerRight}>
+            <Pressable
+              style={[styles.donePill, { backgroundColor: colors.primary }]}
+              onPress={handleDoneEditing}
+            >
+              <Text style={styles.donePillText}>Done</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
+      ) : (
+        <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+          <Pressable onPress={() => router.back()} hitSlop={8} style={styles.headerBack}>
+            <Ionicons name="chevron-down" size={22} color={colors.textSecondary} />
+          </Pressable>
+          <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+            {displayName}
+          </Text>
+          <View style={styles.headerRightRow}>
+            <Pressable
+              style={[styles.startPill, { backgroundColor: colors.primary }, startingWorkout && { opacity: 0.6 }]}
+              onPress={handleStartWorkout}
+              disabled={startingWorkout}
+            >
+              <Ionicons name="play" size={13} color="#fff" style={{ marginRight: 4 }} />
+              <Text style={styles.startPillText}>{startingWorkout ? "Starting…" : "Start"}</Text>
+            </Pressable>
+            <Pressable onPress={() => setViewMenuOpen(true)} hitSlop={8} style={styles.menuBtn}>
+              <Ionicons name="ellipsis-vertical" size={20} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       <ScrollView
         ref={scrollRef}
@@ -226,16 +307,48 @@ export default function RoutineEditorScreen() {
           </View>
         )}
 
+        {/* ── Edit mode: name + description inputs ── */}
+        {isEditing && (
+          <View style={[styles.nameCard, { backgroundColor: colors.surface }]}>
+            <TextInput
+              style={[styles.nameInput, { color: colors.text, borderBottomColor: colors.border }]}
+              value={editableName}
+              onChangeText={setEditableName}
+              placeholder="Routine name"
+              placeholderTextColor={colors.textTertiary}
+              returnKeyType="done"
+            />
+            <TextInput
+              style={[styles.descInput, { color: colors.textSecondary }]}
+              value={editableDesc}
+              onChangeText={setEditableDesc}
+              placeholder="Add description (optional)"
+              placeholderTextColor={colors.textTertiary}
+              returnKeyType="done"
+              multiline
+            />
+          </View>
+        )}
+
+        {/* ── View mode: description pill ── */}
+        {!isEditing && displayDesc ? (
+          <Text style={[styles.viewDesc, { color: colors.textSecondary }]}>{displayDesc}</Text>
+        ) : null}
+
+        {/* ── Empty state ── */}
         {exercises.length === 0 && (
           <View style={styles.emptyState}>
             <Ionicons name="barbell-outline" size={40} color={colors.textTertiary} />
             <Text style={[styles.emptyText, { color: colors.textTertiary }]}>No exercises yet</Text>
-            <Text style={[styles.emptySubText, { color: colors.textTertiary }]}>
-              Tap "Add Exercise" to build your routine
-            </Text>
+            {isEditing && (
+              <Text style={[styles.emptySubText, { color: colors.textTertiary }]}>
+                Tap "Add Exercise" to build your routine
+              </Text>
+            )}
           </View>
         )}
 
+        {/* ── Exercise cards ── */}
         {exercises.map((ex) => {
           const sets = exerciseSets[ex.routine_exercise_id] ?? [];
           return (
@@ -255,9 +368,11 @@ export default function RoutineEditorScreen() {
                     {ex.exercise_name}
                   </Text>
                 </Pressable>
-                <Pressable onPress={() => openExerciseOptions(ex)} hitSlop={8}>
-                  <Ionicons name="ellipsis-horizontal" size={20} color={colors.textTertiary} />
-                </Pressable>
+                {isEditing && (
+                  <Pressable onPress={() => openExerciseOptions(ex)} hitSlop={8}>
+                    <Ionicons name="ellipsis-horizontal" size={20} color={colors.textTertiary} />
+                  </Pressable>
+                )}
               </View>
 
               {/* Column headers */}
@@ -265,51 +380,67 @@ export default function RoutineEditorScreen() {
                 <Text style={[styles.colHeader, styles.colSet, { color: colors.textTertiary }]}>SET</Text>
                 <Text style={[styles.colHeader, styles.colWeight, { color: colors.textTertiary }]}>LBS</Text>
                 <Text style={[styles.colHeader, styles.colReps, { color: colors.textTertiary }]}>REPS</Text>
-                <Text style={[styles.colHeader, styles.colW, { color: colors.textTertiary }]}>W</Text>
-                <View style={styles.colDel} />
+                {isEditing && (
+                  <>
+                    <Text style={[styles.colHeader, styles.colW, { color: colors.textTertiary }]}>W</Text>
+                    <View style={styles.colDel} />
+                  </>
+                )}
               </View>
 
-              {sets.map((set) => (
-                <TemplateSetRow
-                  key={set.routine_set_id}
-                  set={set}
-                  routineExerciseId={ex.routine_exercise_id}
-                  onUpdate={handleUpdateSet}
-                  onDelete={handleDeleteSet}
-                  colors={colors}
-                />
-              ))}
+              {/* Set rows */}
+              {sets.map((set) =>
+                isEditing ? (
+                  <TemplateSetRow
+                    key={set.routine_set_id}
+                    set={set}
+                    routineExerciseId={ex.routine_exercise_id}
+                    onUpdate={handleUpdateSet}
+                    onDelete={handleDeleteSet}
+                    colors={colors}
+                  />
+                ) : (
+                  <ViewSetRow key={set.routine_set_id} set={set} colors={colors} />
+                )
+              )}
 
-              {/* Add Set */}
-              <Pressable
-                style={[styles.addSetRow, { borderTopColor: colors.border }]}
-                onPress={() => handleAddSet(ex.routine_exercise_id)}
-              >
-                <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
-                <Text style={[styles.addSetText, { color: colors.primary }]}>Add Set</Text>
-              </Pressable>
+              {/* Add Set (edit only) */}
+              {isEditing && (
+                <Pressable
+                  style={[styles.addSetRow, { borderTopColor: colors.border }]}
+                  onPress={() => handleAddSet(ex.routine_exercise_id)}
+                >
+                  <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
+                  <Text style={[styles.addSetText, { color: colors.primary }]}>Add Set</Text>
+                </Pressable>
+              )}
             </View>
           );
         })}
 
-        {/* Add Exercise card */}
-        <Pressable
-          style={[styles.addExCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => setShowExercisePicker(true)}
-        >
-          <View style={[styles.addExIconWrap, { backgroundColor: colors.primaryLight }]}>
-            <Ionicons name="add" size={20} color={colors.primary} />
-          </View>
-          <Text style={[styles.addExText, { color: colors.primary }]}>Add Exercise</Text>
-        </Pressable>
+        {/* ── Add Exercise card (edit only) ── */}
+        {isEditing && (
+          <Pressable
+            style={[styles.addExCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => setShowExercisePicker(true)}
+          >
+            <View style={[styles.addExIconWrap, { backgroundColor: colors.primaryLight }]}>
+              <Ionicons name="add" size={20} color={colors.primary} />
+            </View>
+            <Text style={[styles.addExText, { color: colors.primary }]}>Add Exercise</Text>
+          </Pressable>
+        )}
 
-        {/* Delete Routine */}
-        <Pressable style={styles.deleteRoutineBtn} onPress={() => setShowDeleteRoutine(true)}>
-          <Ionicons name="trash-outline" size={15} color={colors.danger} />
-          <Text style={[styles.deleteRoutineText, { color: colors.danger }]}>Delete Routine</Text>
-        </Pressable>
+        {/* ── Delete Routine button (edit only) ── */}
+        {isEditing && (
+          <Pressable style={styles.deleteRoutineBtn} onPress={() => setShowDeleteRoutine(true)}>
+            <Ionicons name="trash-outline" size={15} color={colors.danger} />
+            <Text style={[styles.deleteRoutineText, { color: colors.danger }]}>Delete Routine</Text>
+          </Pressable>
+        )}
       </ScrollView>
 
+      {/* ── Exercise picker ── */}
       <ExercisePicker
         visible={showExercisePicker}
         onSelect={(exercise) => {
@@ -327,7 +458,7 @@ export default function RoutineEditorScreen() {
         }}
       />
 
-      {/* Exercise options bottom sheet */}
+      {/* ── Exercise options bottom sheet (edit only) ── */}
       <Modal visible={exerciseOptionsVisible} transparent animationType="slide" onRequestClose={closeExerciseOptions}>
         <Pressable style={modalStyles.overlay} onPress={closeExerciseOptions}>
           <View style={[modalStyles.sheet, { backgroundColor: colors.surface }]}>
@@ -367,10 +498,49 @@ export default function RoutineEditorScreen() {
         </Pressable>
       </Modal>
 
+      {/* ── View mode options menu ── */}
+      <Modal visible={viewMenuOpen} transparent animationType="slide" onRequestClose={() => setViewMenuOpen(false)}>
+        <Pressable style={modalStyles.overlay} onPress={() => setViewMenuOpen(false)}>
+          <View style={[modalStyles.sheet, { backgroundColor: colors.surface }]}>
+            <View style={[modalStyles.handle, { backgroundColor: colors.border }]} />
+            <Text style={[modalStyles.sheetTitle, { color: colors.textSecondary }]} numberOfLines={1}>
+              {displayName}
+            </Text>
+            <Pressable
+              style={[modalStyles.option, { borderBottomColor: colors.border }]}
+              onPress={enterEditMode}
+            >
+              <View style={[modalStyles.iconWrap, { backgroundColor: colors.primaryLight }]}>
+                <Ionicons name="pencil-outline" size={16} color={colors.primary} />
+              </View>
+              <Text style={[modalStyles.optionLabel, { color: colors.text }]}>Edit Routine</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            </Pressable>
+            <Pressable
+              style={modalStyles.option}
+              onPress={() => { setViewMenuOpen(false); setShowDeleteRoutine(true); }}
+            >
+              <View style={[modalStyles.iconWrap, { backgroundColor: colors.dangerLight }]}>
+                <Ionicons name="trash-outline" size={16} color={colors.danger} />
+              </View>
+              <Text style={[modalStyles.optionLabel, { color: colors.danger }]}>Delete Routine</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.danger} style={{ opacity: 0.4 }} />
+            </Pressable>
+            <Pressable
+              style={[modalStyles.cancelBtn, { backgroundColor: colors.surfaceSecondary }]}
+              onPress={() => setViewMenuOpen(false)}
+            >
+              <Text style={[modalStyles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* ── Delete confirm ── */}
       <ConfirmModal
         visible={showDeleteRoutine}
         title="Delete Routine"
-        message={`"${routineName}" will be permanently deleted. This cannot be undone.`}
+        message={`"${displayName}" will be permanently deleted. This cannot be undone.`}
         confirmText="Delete"
         cancelText="Cancel"
         confirmStyle="danger"
@@ -382,7 +552,28 @@ export default function RoutineEditorScreen() {
   );
 }
 
-// ─── TemplateSetRow ───────────────────────────────────────────────────────────
+// ─── ViewSetRow (read-only) ───────────────────────────────────────────────────
+
+function ViewSetRow({ set, colors }: { set: any; colors: any }) {
+  const isWarmup = set.is_warmup === true;
+  return (
+    <View style={[rowStyles.row, { backgroundColor: isWarmup ? colors.warningLight + "55" : "transparent", borderBottomColor: colors.border }]}>
+      <View style={[rowStyles.setNumWrap, isWarmup && { backgroundColor: colors.warningLight }]}>
+        <Text style={[rowStyles.setNum, { color: isWarmup ? colors.warning : colors.textTertiary }]}>
+          {isWarmup ? "W" : set.set_number}
+        </Text>
+      </View>
+      <Text style={[viewRowStyles.cell, { color: colors.text }]}>
+        {set.target_weight != null ? String(set.target_weight) : "—"}
+      </Text>
+      <Text style={[viewRowStyles.cell, { color: colors.text }]}>
+        {set.target_reps != null ? String(set.target_reps) : "—"}
+      </Text>
+    </View>
+  );
+}
+
+// ─── TemplateSetRow (editable) ────────────────────────────────────────────────
 
 function TemplateSetRow({
   set,
@@ -427,14 +618,11 @@ function TemplateSetRow({
 
   return (
     <View style={[rowStyles.row, { backgroundColor: rowBg, borderBottomColor: colors.border }]}>
-      {/* Set number / W badge */}
       <View style={[rowStyles.setNumWrap, isWarmup && { backgroundColor: colors.warningLight }]}>
         <Text style={[rowStyles.setNum, { color: isWarmup ? colors.warning : colors.textTertiary }]}>
           {isWarmup ? "W" : set.set_number}
         </Text>
       </View>
-
-      {/* Weight */}
       <TextInput
         style={[rowStyles.input, rowStyles.weightCol, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBackground }]}
         value={weight}
@@ -445,8 +633,6 @@ function TemplateSetRow({
         placeholderTextColor={colors.textTertiary}
         returnKeyType="done"
       />
-
-      {/* Reps */}
       <TextInput
         style={[rowStyles.input, rowStyles.repsCol, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBackground }]}
         value={reps}
@@ -457,8 +643,6 @@ function TemplateSetRow({
         placeholderTextColor={colors.textTertiary}
         returnKeyType="done"
       />
-
-      {/* Warmup toggle */}
       <Pressable
         style={[rowStyles.warmupBtn, isWarmup && { backgroundColor: colors.warningLight }]}
         onPress={() => onUpdate(set.routine_set_id, routineExerciseId, { is_warmup: !isWarmup })}
@@ -466,8 +650,6 @@ function TemplateSetRow({
       >
         <Text style={[rowStyles.warmupLabel, { color: isWarmup ? colors.warning : colors.textTertiary }]}>W</Text>
       </Pressable>
-
-      {/* Delete */}
       <Pressable
         onPress={() => onDelete(set.routine_set_id, routineExerciseId)}
         hitSlop={6}
@@ -491,22 +673,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerBack: { width: 36, alignItems: "flex-start" },
+  headerBack: { width: 64, alignItems: "flex-start" },
   headerTitle: { flex: 1, fontSize: 17, fontWeight: "700", textAlign: "center" },
-  headerRight: { width: 80, alignItems: "flex-end" },
+  headerRight: { width: 64, alignItems: "flex-end" },
+  headerRightRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  cancelText: { fontSize: 16, fontWeight: "500" },
+  donePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  donePillText: { color: "#fff", fontSize: 14, fontWeight: "700" },
   startPill: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 20,
   },
   startPillText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  menuBtn: { padding: 2 },
 
   scrollContent: { paddingVertical: 12, paddingHorizontal: 16, gap: 12, paddingBottom: 60 },
 
   errorBanner: { borderRadius: 10, padding: 12 },
   errorText: { fontSize: 14, fontWeight: "500" },
+
+  nameCard: { borderRadius: 14, padding: 16, gap: 4 },
+  nameInput: {
+    fontSize: 20,
+    fontWeight: "700",
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  descInput: { fontSize: 14, paddingVertical: 8, minHeight: 36 },
+
+  viewDesc: { fontSize: 14, paddingHorizontal: 4, marginBottom: 4 },
 
   emptyState: { alignItems: "center", paddingVertical: 48, gap: 8 },
   emptyText: { fontSize: 17, fontWeight: "600" },
@@ -573,6 +775,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   deleteRoutineText: { fontSize: 14, fontWeight: "600" },
+});
+
+const viewRowStyles = StyleSheet.create({
+  cell: { flex: 1, fontSize: 14, fontWeight: "500", textAlign: "center" },
 });
 
 const rowStyles = StyleSheet.create({
