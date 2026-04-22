@@ -353,7 +353,7 @@ export const localDb = {
   },
 
   // Save a progress photo URI (local file URI for offline sessions)
-  updateSessionPhotoUrl: async (sessionId: number, photoUrl: string) => {
+  updateSessionPhotoUrl: async (sessionId: number, photoUrl: string | null) => {
     localWorkoutSessions = localWorkoutSessions.map((s) =>
       s.session_id === sessionId ? { ...s, photo_url: photoUrl } : s
     );

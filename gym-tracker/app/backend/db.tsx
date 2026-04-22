@@ -125,7 +125,7 @@ export const db = {
     }
   },
 
-  updateSessionPhotoUrl: async (sessionId: number, photoUrl: string) => {
+  updateSessionPhotoUrl: async (sessionId: number, photoUrl: string | null) => {
     if (useSupabase()) {
       return supabase.from("workout_sessions").update({ photo_url: photoUrl }).eq("session_id", sessionId);
     }

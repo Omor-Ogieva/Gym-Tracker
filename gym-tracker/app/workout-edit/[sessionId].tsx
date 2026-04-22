@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -17,6 +18,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { db } from "../backend/db";
 import { useTheme } from "../theme/ThemeContext";
 import ExercisePicker from "../components/ExercisePicker";
+import ProgressPhotoModal from "../components/ProgressPhotoModal";
 
 type EditSet = {
   session_set_id: number;
@@ -49,6 +51,10 @@ export default function WorkoutEditScreen() {
   const [sessionNotes, setSessionNotes] = useState("");
   const [exercises, setExercises] = useState<EditExercise[]>([]);
 
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+
   const [showPicker, setShowPicker] = useState(false);
   const [exerciseOptionsVisible, setExerciseOptionsVisible] = useState(false);
   const [selectedExercise, setSelectedExercise] = useState<EditExercise | null>(null);
@@ -73,6 +79,7 @@ export default function WorkoutEditScreen() {
     }
     setSessionName(session?.session_name ?? "");
     setSessionNotes(session?.notes ?? "");
+    setPhotoUrl(session?.photo_url ?? null);
 
     const exList: any[] = exData ?? [];
     const exerciseIds = exList.map((e) => e.session_exercise_id);
@@ -121,6 +128,45 @@ export default function WorkoutEditScreen() {
       return;
     }
     router.back();
+  }
+
+  // ── Photo editing ────────────────────────────────────
+
+  async function handlePhoto(uri: string) {
+    setPhotoUploading(true);
+    const { data: userData } = await db.getUser();
+    const userId = userData?.user?.id;
+    if (userId) {
+      const { url, error: uploadError } = await db.uploadProgressPhoto(userId, sid, uri);
+      if (uploadError) {
+        Alert.alert("Upload Failed", uploadError);
+        setPhotoUploading(false);
+        setShowPhotoModal(false);
+        return;
+      }
+      await db.updateSessionPhotoUrl(sid, url);
+      setPhotoUrl(url);
+    } else {
+      // offline — store local URI
+      await db.updateSessionPhotoUrl(sid, uri);
+      setPhotoUrl(uri);
+    }
+    setPhotoUploading(false);
+    setShowPhotoModal(false);
+  }
+
+  async function handleRemovePhoto() {
+    Alert.alert("Remove Photo", "Remove the progress photo from this workout?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          await db.updateSessionPhotoUrl(sid, null);
+          setPhotoUrl(null);
+        },
+      },
+    ]);
   }
 
   // ── Set editing ──────────────────────────────────────
@@ -320,6 +366,37 @@ export default function WorkoutEditScreen() {
             multiline
             maxLength={500}
           />
+          {/* Progress photo */}
+          {photoUrl ? (
+            <View>
+              <Image source={{ uri: photoUrl }} style={styles.photoPreview} resizeMode="cover" />
+              <View style={styles.photoActions}>
+                <Pressable
+                  style={[styles.photoBtn, { backgroundColor: colors.surfaceSecondary }]}
+                  onPress={() => setShowPhotoModal(true)}
+                >
+                  <Ionicons name="camera-outline" size={15} color={colors.textSecondary} />
+                  <Text style={[styles.photoBtnText, { color: colors.textSecondary }]}>Change</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.photoBtn, { backgroundColor: colors.dangerLight }]}
+                  onPress={handleRemovePhoto}
+                >
+                  <Ionicons name="trash-outline" size={15} color={colors.danger} />
+                  <Text style={[styles.photoBtnText, { color: colors.danger }]}>Remove</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <Pressable
+              style={[styles.addPhotoBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
+              onPress={() => setShowPhotoModal(true)}
+            >
+              <Ionicons name="camera-outline" size={18} color={colors.primary} />
+              <Text style={[styles.addPhotoBtnText, { color: colors.primary }]}>Add Progress Photo</Text>
+            </Pressable>
+          )}
+
           {error ? (
             <Text style={{ color: colors.danger, fontSize: 13, marginTop: 4 }}>{error}</Text>
           ) : null}
@@ -473,6 +550,14 @@ export default function WorkoutEditScreen() {
         </Pressable>
       </Modal>
 
+      {/* Progress Photo Modal */}
+      <ProgressPhotoModal
+        visible={showPhotoModal}
+        isUploading={photoUploading}
+        onPhoto={handlePhoto}
+        onSkip={() => setShowPhotoModal(false)}
+      />
+
       {/* Exercise Picker */}
       <ExercisePicker
         visible={showPicker}
@@ -558,6 +643,24 @@ const styles = StyleSheet.create({
     paddingVertical: 14, borderRadius: 12, borderWidth: 1,
   },
   addExerciseText: { fontSize: 15, fontWeight: "700" },
+
+  photoPreview: {
+    width: "100%", height: 200,
+    borderRadius: 10, overflow: "hidden",
+  },
+  photoActions: {
+    flexDirection: "row", gap: 8, marginTop: 8,
+  },
+  photoBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, paddingVertical: 9, borderRadius: 8,
+  },
+  photoBtnText: { fontSize: 14, fontWeight: "600" },
+  addPhotoBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 8, paddingVertical: 12, borderRadius: 10, borderWidth: 1,
+  },
+  addPhotoBtnText: { fontSize: 14, fontWeight: "600" },
 });
 
 const modalStyles = StyleSheet.create({
