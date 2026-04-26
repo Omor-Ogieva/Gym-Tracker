@@ -337,6 +337,94 @@ export const db = {
     return result;
   },
 
+  // Sync completed session sets back to the routine template targets.
+  // Called after finishing a workout so the routine reflects what was actually done.
+  syncSessionSetsToRoutine: async (sessionId: number, routineId: number) => {
+    if (useSupabase()) {
+      // Fetch session exercises + routine exercises in parallel
+      const [{ data: sessionExercises }, { data: routineExercises }] = await Promise.all([
+        supabase.from("session_exercises").select("*").eq("session_id", sessionId),
+        supabase.from("routine_exercises").select("*").eq("routine_id", routineId),
+      ]);
+      if (!sessionExercises?.length || !routineExercises?.length) return;
+
+      const sessionExIds = sessionExercises.map((e: any) => e.session_exercise_id);
+      const routineExIds = routineExercises.map((e: any) => e.routine_exercise_id);
+
+      // Fetch all sets in parallel
+      const [{ data: sessionSets }, { data: routineSets }] = await Promise.all([
+        supabase.from("session_exercise_sets").select("*").in("session_exercise_id", sessionExIds),
+        supabase.from("routine_exercise_sets").select("*").in("routine_exercise_id", routineExIds),
+      ]);
+
+      // Build lookup: routineExerciseId:setNumber → routineSetId
+      const routineSetMap = new Map<string, number>();
+      for (const rs of routineSets ?? []) {
+        routineSetMap.set(`${rs.routine_exercise_id}:${rs.set_number}`, rs.routine_set_id);
+      }
+
+      // Map exercise_id → routine exercise
+      const routineExByExId = new Map((routineExercises ?? []).map((e: any) => [e.exercise_id, e]));
+
+      const updates: PromiseLike<any>[] = [];
+      for (const sessionEx of sessionExercises) {
+        const routineEx = routineExByExId.get(sessionEx.exercise_id);
+        if (!routineEx) continue;
+
+        const completedSets = (sessionSets ?? []).filter(
+          (s: any) => s.session_exercise_id === sessionEx.session_exercise_id && s.completed
+        );
+        for (const ss of completedSets) {
+          const routineSetId = routineSetMap.get(`${routineEx.routine_exercise_id}:${ss.set_number}`);
+          if (routineSetId == null) continue;
+
+          const payload =
+            sessionEx.exercise_type === "cardio"
+              ? { target_distance_meters: ss.distance_meters ?? null, target_duration_seconds: ss.duration_seconds ?? null }
+              : { target_weight: ss.weight ?? null, target_reps: ss.reps ?? null };
+
+          updates.push(
+            supabase.from("routine_exercise_sets").update(payload).eq("routine_set_id", routineSetId)
+          );
+        }
+      }
+      await Promise.all(updates);
+      return;
+    }
+
+    // Local fallback — delegate row-by-row via existing updateRoutineExerciseSet
+    const [{ data: sessionExercises }, { data: routineExercises }] = await Promise.all([
+      localDb.getSessionExercises(sessionId),
+      localDb.getRoutineExercises(routineId),
+    ]);
+    if (!sessionExercises?.length || !routineExercises?.length) return;
+
+    const routineExByExId = new Map((routineExercises ?? []).map((e: any) => [e.exercise_id, e]));
+
+    for (const sessionEx of sessionExercises) {
+      const routineEx = routineExByExId.get(sessionEx.exercise_id);
+      if (!routineEx) continue;
+
+      const { data: sessionSets } = await localDb.getSessionExerciseSets(sessionEx.session_exercise_id);
+      const { data: routineSets } = await localDb.getRoutineExerciseSets(routineEx.routine_exercise_id);
+      const routineSetMap = new Map<number, number>(
+        (routineSets ?? []).map((rs: any) => [rs.set_number, rs.routine_set_id])
+      );
+
+      for (const ss of (sessionSets ?? []).filter((s: any) => s.completed)) {
+        const routineSetId = routineSetMap.get(ss.set_number);
+        if (routineSetId == null) continue;
+
+        const payload =
+          sessionEx.exercise_type === "cardio"
+            ? { target_distance_meters: ss.distance_meters ?? null, target_duration_seconds: ss.duration_seconds ?? null }
+            : { target_weight: ss.weight ?? null, target_reps: ss.reps ?? null };
+
+        await localDb.updateRoutineExerciseSet(routineSetId, payload);
+      }
+    }
+  },
+
   getWorkoutSessions: async (userId: string) => {
     if (useSupabase()) {
       return supabase.from("workout_sessions")

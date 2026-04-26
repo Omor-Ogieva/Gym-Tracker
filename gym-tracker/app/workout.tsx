@@ -303,6 +303,13 @@ export default function WorkoutScreen() {
     const { error } = await db.finishWorkoutSession(session.session_id, notes || null);
     if (error) { setError(error.message); return; }
 
+    // Sync completed set values back to the routine template so it reflects what was done
+    if (session.routine_id) {
+      try {
+        await db.syncSessionSetsToRoutine(session.session_id, session.routine_id);
+      } catch (_) {}
+    }
+
     // Mark local session as ended so the beforeRemove listener doesn't intercept router.back()
     setSession((prev: any) => ({ ...prev, end_time: new Date().toISOString() }));
     cancelRestDoneNotification();

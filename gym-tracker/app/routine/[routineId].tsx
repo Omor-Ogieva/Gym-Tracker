@@ -1,9 +1,9 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable,
+  ActivityIndicator, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { db } from "../backend/db";
 import { useTheme } from "../theme/ThemeContext";
@@ -80,7 +80,7 @@ export default function RoutineScreen() {
     setExerciseSets((prev) => ({ ...prev, [routineExerciseId]: data ?? [] }));
   };
 
-  useEffect(() => { loadData(); }, []);
+  useFocusEffect(useCallback(() => { loadData(); }, []));
 
   // ─── Mode transitions ──────────────────────────────────────────────────────
 
@@ -117,6 +117,8 @@ export default function RoutineScreen() {
 
   const handleDoneEditing = async () => {
     await handleSaveNameDesc();
+    // Dismiss keyboard so any focused TextInput fires its onBlur before we switch modes
+    Keyboard.dismiss();
     setIsEditing(false);
   };
 
@@ -214,17 +216,15 @@ export default function RoutineScreen() {
     routineExerciseId: number,
     updates: { target_reps?: number | null; target_weight?: number | null; is_warmup?: boolean; target_duration_seconds?: number | null; target_distance_meters?: number | null }
   ) => {
-    if ("is_warmup" in updates) {
-      setExerciseSets((prev) => ({
-        ...prev,
-        [routineExerciseId]: (prev[routineExerciseId] ?? []).map((s) =>
-          s.routine_set_id === routineSetId ? { ...s, ...updates } : s
-        ),
-      }));
-    }
+    setExerciseSets((prev) => ({
+      ...prev,
+      [routineExerciseId]: (prev[routineExerciseId] ?? []).map((s) =>
+        s.routine_set_id === routineSetId ? { ...s, ...updates } : s
+      ),
+    }));
     const { error: err } = await db.updateRoutineExerciseSet(routineSetId, updates);
     if (err) { setError(err.message); reloadSetsForExercise(routineExerciseId); }
-  }, []);
+  }, [reloadSetsForExercise]);
 
   const handleStartWorkout = useGuardedPress(async () => {
     setStartingWorkout(true);
@@ -649,7 +649,6 @@ const CardioTemplateSetRow = memo(function CardioTemplateSetRow({
       : ""
   );
   const [digitBuffer, setDigitBuffer] = useState(() => secondsToDigits(set.target_duration_seconds));
-  const [durationFocused, setDurationFocused] = useState(false);
 
   useEffect(() => {
     setDistance(
@@ -672,7 +671,6 @@ const CardioTemplateSetRow = memo(function CardioTemplateSetRow({
   }, []);
 
   const handleDurationBlur = useCallback(() => {
-    setDurationFocused(false);
     const secs = digitsToSeconds(digitBuffer);
     if ((secs > 0 ? secs : null) !== set.target_duration_seconds) {
       onUpdate(set.routine_set_id, routineExerciseId, { target_duration_seconds: secs > 0 ? secs : null });
@@ -696,12 +694,11 @@ const CardioTemplateSetRow = memo(function CardioTemplateSetRow({
       />
       <TextInput
         style={[rowStyles.input, rowStyles.repsCol, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBackground }]}
-        value={durationFocused ? digitBuffer : formatDigits(digitBuffer)}
+        value={formatDigits(digitBuffer)}
         onChangeText={handleDurationChange}
-        onFocus={() => setDurationFocused(true)}
         onBlur={handleDurationBlur}
         keyboardType="number-pad"
-        placeholder="0:00"
+        placeholder="00:00:00"
         placeholderTextColor={colors.textTertiary}
         returnKeyType="done"
       />

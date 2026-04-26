@@ -39,7 +39,6 @@ const CardioSetRow = memo(function CardioSetRow({
 
   const [distanceInput, setDistanceInput] = useState(toDistStr(set.distance_meters));
   const [digitBuffer, setDigitBuffer] = useState(() => secondsToDigits(set.duration_seconds));
-  const [durationFocused, setDurationFocused] = useState(false);
 
   useEffect(() => {
     setDistanceInput(toDistStr(set.distance_meters));
@@ -82,7 +81,6 @@ const CardioSetRow = memo(function CardioSetRow({
   }, []);
 
   const handleDurationBlur = useCallback(() => {
-    setDurationFocused(false);
     commitNow(distanceInput, digitsToSeconds(digitBuffer));
   }, [digitBuffer, distanceInput, commitNow]);
 
@@ -162,14 +160,13 @@ const CardioSetRow = memo(function CardioSetRow({
         selectTextOnFocus
       />
 
-      {/* Duration input — digit-shift: type raw digits, displays h:mm:ss on blur */}
+      {/* Duration input — digit-shift: type raw digits, always shows h:mm:ss colons as guides */}
       <TextInput
         style={[rowStyles.cell, { backgroundColor: inputBg, color: inputColor }]}
-        value={durationFocused ? digitBuffer : formatDigits(digitBuffer)}
+        value={formatDigits(digitBuffer)}
         onChangeText={handleDurationChange}
-        onFocus={() => setDurationFocused(true)}
         onBlur={handleDurationBlur}
-        placeholder="0:00"
+        placeholder="00:00:00"
         placeholderTextColor={colors.textTertiary}
         keyboardType="number-pad"
         returnKeyType="done"
