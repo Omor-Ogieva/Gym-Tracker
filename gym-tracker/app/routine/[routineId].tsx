@@ -10,6 +10,7 @@ import { useTheme } from "../theme/ThemeContext";
 import { useGuardedPress } from "../utils/pressGuard";
 import ExercisePicker from "../components/ExercisePicker";
 import ConfirmModal from "../components/ConfirmModal";
+import { digitsToSeconds, formatDigits, formatDistance, formatDuration, metersToMiles, milesToMeters, secondsToDigits } from "../utils/cardioUtils";
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -123,11 +124,13 @@ export default function RoutineScreen() {
 
   const handleAddExercise = useGuardedPress(async (exercise: any) => {
     setShowExercisePicker(false);
+    const exType = exercise.exercise_type ?? exercise.category ?? 'strength';
     const { error: err } = await db.insertRoutineExercise({
       routine_id: routineId,
       exercise_id: exercise.id,
       exercise_name: exercise.name,
       exercise_order: exercises.length === 0 ? 1 : Math.max(...exercises.map((e) => e.exercise_order)) + 1,
+      exercise_type: exType,
     });
     if (err) { setError(err.message); return; }
     await loadData();
@@ -180,12 +183,16 @@ export default function RoutineScreen() {
 
   const handleAddSet = useGuardedPress(async (routineExerciseId: number) => {
     const currentSets = exerciseSets[routineExerciseId] ?? [];
+    const ex = exercises.find((e) => e.routine_exercise_id === routineExerciseId);
+    const isCardio = ex?.exercise_type === 'cardio';
     const { error: err } = await db.insertRoutineExerciseSet({
       routine_exercise_id: routineExerciseId,
       set_number: currentSets.length + 1,
       target_weight: null,
       target_reps: null,
-      is_warmup: false,
+      is_warmup: isCardio ? false : false,
+      target_duration_seconds: null,
+      target_distance_meters: null,
     });
     if (err) { setError(err.message); return; }
     await reloadSetsForExercise(routineExerciseId);
@@ -205,7 +212,7 @@ export default function RoutineScreen() {
   const handleUpdateSet = useCallback(async (
     routineSetId: number,
     routineExerciseId: number,
-    updates: { target_reps?: number | null; target_weight?: number | null; is_warmup?: boolean }
+    updates: { target_reps?: number | null; target_weight?: number | null; is_warmup?: boolean; target_duration_seconds?: number | null; target_distance_meters?: number | null }
   ) => {
     if ("is_warmup" in updates) {
       setExerciseSets((prev) => ({
@@ -355,6 +362,7 @@ export default function RoutineScreen() {
         {/* ── Exercise cards ── */}
         {exercises.map((ex) => {
           const sets = exerciseSets[ex.routine_exercise_id] ?? [];
+          const isCardio = ex.exercise_type === 'cardio';
           return (
             <View key={ex.routine_exercise_id} style={[styles.exerciseCard, { backgroundColor: colors.surface }]}>
               {/* Exercise name row */}
@@ -382,29 +390,56 @@ export default function RoutineScreen() {
               {/* Column headers */}
               <View style={[styles.colHeaders, { borderBottomColor: colors.border }]}>
                 <Text style={[styles.colHeader, styles.colSet, { color: colors.textTertiary }]}>SET</Text>
-                <Text style={[styles.colHeader, styles.colWeight, { color: colors.textTertiary }]}>LBS</Text>
-                <Text style={[styles.colHeader, styles.colReps, { color: colors.textTertiary }]}>REPS</Text>
-                {isEditing && (
+                {isCardio ? (
+                  <>
+                    <Text style={[styles.colHeader, styles.colWeight, { color: colors.textTertiary }]}>DIST (mi)</Text>
+                    <Text style={[styles.colHeader, styles.colReps, { color: colors.textTertiary }]}>DURATION</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={[styles.colHeader, styles.colWeight, { color: colors.textTertiary }]}>LBS</Text>
+                    <Text style={[styles.colHeader, styles.colReps, { color: colors.textTertiary }]}>REPS</Text>
+                  </>
+                )}
+                {isEditing && !isCardio && (
                   <>
                     <Text style={[styles.colHeader, styles.colW, { color: colors.textTertiary }]}>W</Text>
                     <View style={styles.colDel} />
                   </>
+                )}
+                {isEditing && isCardio && (
+                  <View style={styles.colDel} />
                 )}
               </View>
 
               {/* Set rows */}
               {sets.map((set) =>
                 isEditing ? (
-                  <TemplateSetRow
-                    key={set.routine_set_id}
-                    set={set}
-                    routineExerciseId={ex.routine_exercise_id}
-                    onUpdate={handleUpdateSet}
-                    onDelete={handleDeleteSet}
-                    colors={colors}
-                  />
+                  isCardio ? (
+                    <CardioTemplateSetRow
+                      key={set.routine_set_id}
+                      set={set}
+                      routineExerciseId={ex.routine_exercise_id}
+                      onUpdate={handleUpdateSet}
+                      onDelete={handleDeleteSet}
+                      colors={colors}
+                    />
+                  ) : (
+                    <TemplateSetRow
+                      key={set.routine_set_id}
+                      set={set}
+                      routineExerciseId={ex.routine_exercise_id}
+                      onUpdate={handleUpdateSet}
+                      onDelete={handleDeleteSet}
+                      colors={colors}
+                    />
+                  )
                 ) : (
-                  <ViewSetRow key={set.routine_set_id} set={set} colors={colors} />
+                  isCardio ? (
+                    <CardioViewSetRow key={set.routine_set_id} set={set} colors={colors} />
+                  ) : (
+                    <ViewSetRow key={set.routine_set_id} set={set} colors={colors} />
+                  )
                 )
               )}
 
@@ -573,6 +608,110 @@ const ViewSetRow = memo(function ViewSetRow({ set, colors }: { set: any; colors:
       <Text style={[viewRowStyles.cell, { color: colors.text }]}>
         {set.target_reps != null ? String(set.target_reps) : "—"}
       </Text>
+    </View>
+  );
+});
+
+// ─── CardioViewSetRow (read-only) ────────────────────────────────────────────
+
+const CardioViewSetRow = memo(function CardioViewSetRow({ set, colors }: { set: any; colors: any }) {
+  const distLabel = set.target_distance_meters != null ? formatDistance(set.target_distance_meters, 'mi') : "—";
+  const durLabel = set.target_duration_seconds != null ? formatDuration(set.target_duration_seconds) : "—";
+  return (
+    <View style={[rowStyles.row, { backgroundColor: "transparent", borderBottomColor: colors.border }]}>
+      <View style={rowStyles.setNumWrap}>
+        <Text style={[rowStyles.setNum, { color: colors.textTertiary }]}>{set.set_number}</Text>
+      </View>
+      <Text style={[viewRowStyles.cell, { color: colors.text }]}>{distLabel}</Text>
+      <Text style={[viewRowStyles.cell, { color: colors.text }]}>{durLabel}</Text>
+    </View>
+  );
+});
+
+// ─── CardioTemplateSetRow (editable) ──────────────────────────────────────────
+
+const CardioTemplateSetRow = memo(function CardioTemplateSetRow({
+  set,
+  routineExerciseId,
+  onUpdate,
+  onDelete,
+  colors,
+}: {
+  set: any;
+  routineExerciseId: number;
+  onUpdate: (id: number, exId: number, updates: any) => void;
+  onDelete: (id: number, exId: number) => void;
+  colors: any;
+}) {
+  const [distance, setDistance] = useState(
+    set.target_distance_meters != null
+      ? String(parseFloat(metersToMiles(set.target_distance_meters).toFixed(3)))
+      : ""
+  );
+  const [digitBuffer, setDigitBuffer] = useState(() => secondsToDigits(set.target_duration_seconds));
+  const [durationFocused, setDurationFocused] = useState(false);
+
+  useEffect(() => {
+    setDistance(
+      set.target_distance_meters != null
+        ? String(parseFloat(metersToMiles(set.target_distance_meters).toFixed(3)))
+        : ""
+    );
+    setDigitBuffer(secondsToDigits(set.target_duration_seconds));
+  }, [set.target_duration_seconds, set.target_distance_meters]);
+
+  const commitDistance = useCallback(() => {
+    const meters = distance ? milesToMeters(parseFloat(distance)) : null;
+    if (meters !== set.target_distance_meters) {
+      onUpdate(set.routine_set_id, routineExerciseId, { target_distance_meters: meters });
+    }
+  }, [distance, set.target_distance_meters, set.routine_set_id, routineExerciseId, onUpdate]);
+
+  const handleDurationChange = useCallback((text: string) => {
+    setDigitBuffer(text.replace(/\D/g, "").slice(0, 6));
+  }, []);
+
+  const handleDurationBlur = useCallback(() => {
+    setDurationFocused(false);
+    const secs = digitsToSeconds(digitBuffer);
+    if ((secs > 0 ? secs : null) !== set.target_duration_seconds) {
+      onUpdate(set.routine_set_id, routineExerciseId, { target_duration_seconds: secs > 0 ? secs : null });
+    }
+  }, [digitBuffer, set.target_duration_seconds, set.routine_set_id, routineExerciseId, onUpdate]);
+
+  return (
+    <View style={[rowStyles.row, { backgroundColor: "transparent", borderBottomColor: colors.border }]}>
+      <View style={rowStyles.setNumWrap}>
+        <Text style={[rowStyles.setNum, { color: colors.textTertiary }]}>{set.set_number}</Text>
+      </View>
+      <TextInput
+        style={[rowStyles.input, rowStyles.weightCol, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBackground }]}
+        value={distance}
+        onChangeText={setDistance}
+        onBlur={commitDistance}
+        keyboardType="decimal-pad"
+        placeholder="mi"
+        placeholderTextColor={colors.textTertiary}
+        returnKeyType="done"
+      />
+      <TextInput
+        style={[rowStyles.input, rowStyles.repsCol, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBackground }]}
+        value={durationFocused ? digitBuffer : formatDigits(digitBuffer)}
+        onChangeText={handleDurationChange}
+        onFocus={() => setDurationFocused(true)}
+        onBlur={handleDurationBlur}
+        keyboardType="number-pad"
+        placeholder="0:00"
+        placeholderTextColor={colors.textTertiary}
+        returnKeyType="done"
+      />
+      <Pressable
+        onPress={() => onDelete(set.routine_set_id, routineExerciseId)}
+        hitSlop={6}
+        style={rowStyles.deleteBtn}
+      >
+        <Ionicons name="remove-circle-outline" size={18} color={colors.danger} style={{ opacity: 0.7 }} />
+      </Pressable>
     </View>
   );
 });

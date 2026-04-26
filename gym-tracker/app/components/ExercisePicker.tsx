@@ -1,8 +1,10 @@
-import { FlatList, Modal, Pressable, Text, TextInput, View } from "react-native";
+import { FlatList, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useEffect, useState } from "react";
 import { useTheme } from "../theme/ThemeContext";
 import exercisesData from "../../assets/data/exercises.json";
 import { db } from "../backend/db";
+
+type ExerciseType = 'strength' | 'cardio' | 'stretching';
 
 type Exercise = {
   id: string;
@@ -10,8 +12,33 @@ type Exercise = {
   primaryMuscles?: string[];
   equipment?: string;
   isCustom?: boolean;
+  category?: string;
+  exercise_type?: ExerciseType;
   [key: string]: any;
 };
+
+type CategoryTab = 'all' | ExerciseType;
+
+const CATEGORY_TABS: { key: CategoryTab; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'strength', label: 'Strength' },
+  { key: 'cardio', label: 'Cardio' },
+  { key: 'stretching', label: 'Stretching' },
+];
+
+// Teal for cardio, muted for stretching, primary-ish for strength
+const CATEGORY_COLORS: Record<ExerciseType, { bg: string; text: string }> = {
+  cardio: { bg: '#0d94601a', text: '#0d9460' },
+  stretching: { bg: '#6b72801a', text: '#6b7280' },
+  strength: { bg: '', text: '' }, // uses primary from theme, set at render
+};
+
+function getExerciseType(ex: Exercise): ExerciseType {
+  const cat = (ex.category ?? ex.exercise_type ?? 'strength').toLowerCase();
+  if (cat === 'cardio') return 'cardio';
+  if (cat === 'stretching' || cat === 'stretches') return 'stretching';
+  return 'strength';
+}
 
 type Props = {
   visible: boolean;
@@ -22,11 +49,13 @@ type Props = {
 export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
   const { colors } = useTheme();
   const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState<CategoryTab>('all');
   const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newMuscle, setNewMuscle] = useState("");
   const [newEquip, setNewEquip] = useState("");
+  const [newType, setNewType] = useState<ExerciseType>('strength');
 
   useEffect(() => {
     if (!visible) return;
@@ -42,6 +71,8 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
               primaryMuscles: c.primary_muscle ? [c.primary_muscle] : [],
               equipment: c.equipment ?? undefined,
               isCustom: true,
+              exercise_type: (c.exercise_type ?? 'strength') as ExerciseType,
+              category: c.exercise_type ?? 'strength',
             }))
           );
         }
@@ -54,23 +85,28 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
     ...(exercisesData as Exercise[]),
   ];
 
+  const categoryFiltered = activeCategory === 'all'
+    ? allExercises
+    : allExercises.filter((ex) => getExerciseType(ex) === activeCategory);
+
   const filtered = search.length === 0
     ? []
-    : allExercises.filter(
+    : categoryFiltered.filter(
         (ex) => ex.name && ex.name.toLowerCase().includes(search.toLowerCase())
       );
 
   const handleClose = () => {
     setSearch("");
     setShowCreateForm(false);
-    setNewName(""); setNewMuscle(""); setNewEquip("");
+    setNewName(""); setNewMuscle(""); setNewEquip(""); setNewType('strength');
     onClose();
   };
 
   const handleSelect = (exercise: Exercise) => {
     setSearch("");
     setShowCreateForm(false);
-    onSelect(exercise);
+    // Ensure exercise_type is set before passing to caller
+    onSelect({ ...exercise, exercise_type: getExerciseType(exercise) });
   };
 
   const handleCreate = async () => {
@@ -86,6 +122,7 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
       name: newName.trim(),
       primary_muscle: newMuscle.trim() || null,
       equipment: newEquip.trim() || null,
+      exercise_type: newType,
     });
     handleSelect({
       id: exerciseId,
@@ -93,12 +130,28 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
       primaryMuscles: newMuscle.trim() ? [newMuscle.trim()] : [],
       equipment: newEquip.trim() || undefined,
       isCustom: true,
+      exercise_type: newType,
+      category: newType,
     });
+  };
+
+  const CategoryBadge = ({ ex }: { ex: Exercise }) => {
+    const type = getExerciseType(ex);
+    if (type === 'strength') return null; // no badge for strength (default)
+    const style = CATEGORY_COLORS[type];
+    return (
+      <View style={{ backgroundColor: style.bg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+        <Text style={{ fontSize: 10, fontWeight: '700', color: style.text, textTransform: 'capitalize' }}>
+          {type}
+        </Text>
+      </View>
+    );
   };
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* Header: search + cancel */}
         <View style={{
           flexDirection: "row",
           alignItems: "center",
@@ -131,6 +184,36 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
             <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 16 }}>Cancel</Text>
           </Pressable>
         </View>
+
+        {/* Category tabs */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ borderBottomWidth: 1, borderBottomColor: colors.border }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 10, gap: 8, flexDirection: 'row' }}
+        >
+          {CATEGORY_TABS.map((tab) => {
+            const active = activeCategory === tab.key;
+            return (
+              <Pressable
+                key={tab.key}
+                onPress={() => setActiveCategory(tab.key)}
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 7,
+                  borderRadius: 20,
+                  backgroundColor: active ? colors.primary : colors.surfaceSecondary,
+                  borderWidth: 1,
+                  borderColor: active ? colors.primary : colors.border,
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '600', color: active ? '#fff' : colors.textSecondary }}>
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
 
         <FlatList
           data={filtered.slice(0, 50)}
@@ -186,6 +269,31 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
                     value={newEquip}
                     onChangeText={setNewEquip}
                   />
+                  {/* Type selector */}
+                  <View>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 6 }}>Type</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {(['strength', 'cardio', 'stretching'] as ExerciseType[]).map((t) => (
+                        <Pressable
+                          key={t}
+                          onPress={() => setNewType(t)}
+                          style={{
+                            flex: 1,
+                            paddingVertical: 8,
+                            borderRadius: 8,
+                            alignItems: 'center',
+                            backgroundColor: newType === t ? colors.primary : colors.surfaceSecondary,
+                            borderWidth: 1,
+                            borderColor: newType === t ? colors.primary : colors.border,
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: newType === t ? '#fff' : colors.textSecondary, textTransform: 'capitalize' }}>
+                            {t}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
                   <View style={{ flexDirection: "row", gap: 10 }}>
                     <Pressable
                       style={{ flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: colors.surfaceSecondary, alignItems: "center" }}
@@ -218,13 +326,14 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
               })}
             >
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: 'wrap' }}>
                   <Text style={{ fontSize: 15, fontWeight: "600", color: colors.text }}>{ex.name}</Text>
                   {ex.isCustom && (
                     <View style={{ backgroundColor: colors.primaryLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
                       <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primary }}>Custom</Text>
                     </View>
                   )}
+                  <CategoryBadge ex={ex} />
                 </View>
                 <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
                   {ex.primaryMuscles?.join(", ") ?? "Unknown"} • {ex.equipment ?? "none"}

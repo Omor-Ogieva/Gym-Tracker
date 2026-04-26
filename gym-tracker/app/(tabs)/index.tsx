@@ -13,6 +13,7 @@ import ConfirmModal from "../components/ConfirmModal";
 export default function WorkoutsScreen() {
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
+  const hasLoadedRef = useRef(false);
   const { colors } = useTheme();
 
   const [routines, setRoutines] = useState<any[]>([]);
@@ -30,8 +31,8 @@ export default function WorkoutsScreen() {
   // Delete confirm
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
 
-  const loadRoutines = async () => {
-    setLoadingRoutines(true);
+  const loadRoutines = async (showSpinner = true) => {
+    if (showSpinner) setLoadingRoutines(true);
     setError(null);
     const { data, error: err } = await db.getRoutines();
     if (err) setError(err.message);
@@ -122,7 +123,10 @@ export default function WorkoutsScreen() {
     closeRoutineOptions();
   }, [closeRoutineOptions]);
 
-  useFocusEffect(useCallback(() => { loadRoutines(); }, []));
+  useFocusEffect(useCallback(() => {
+    loadRoutines(!hasLoadedRef.current);
+    hasLoadedRef.current = true;
+  }, []));
 
   const selectedIdx = routines.findIndex((r) => r.routine_id === selectedRoutine?.routine_id);
 

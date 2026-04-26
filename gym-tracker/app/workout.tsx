@@ -14,10 +14,12 @@ import { useGuardedPress } from "./utils/pressGuard";
 import ExercisePicker from "./components/ExercisePicker";
 import RestTimerBanner from "./components/RestTimerBanner";
 import { useRestTimer } from "./utils/useRestTimer";
-import { detectPRs } from "./utils/prDetection";
+import { detectPRs, detectCardioPRs } from "./utils/prDetection";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { scheduleRestDoneNotification, cancelRestDoneNotification } from "./utils/notifications";
 import { useUnits } from "./utils/units";
+import CardioSetRow from "./components/CardioSetRow";
+import { computePace, formatDistance, formatDuration, metersToDisplay, parseDistanceToMeters, parseDuration, formatDurationShort } from "./utils/cardioUtils";
 
 export default function WorkoutScreen() {
   const router = useRouter();
@@ -70,6 +72,7 @@ export default function WorkoutScreen() {
   const [selectedExerciseId, setSelectedExerciseId] = useState<number | null>(null);
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [prevSets, setPrevSets] = useState<Record<string, any[]>>({});
+  const [distanceUnit, setDistanceUnit] = useState<'km' | 'mi'>('km');
   const [exerciseOptionsVisible, setExerciseOptionsVisible] = useState(false);
   const [selectedExerciseForOptions, setSelectedExerciseForOptions] = useState<any>(null);
   const exercisePickerModeRef = useRef<"add" | "replace">("add");
@@ -100,6 +103,27 @@ export default function WorkoutScreen() {
     }
     return total;
   }, [exerciseSets]);
+
+  const { totalCardioDistanceMeters, totalCardioDurationSeconds } = useMemo(() => {
+    let dist = 0;
+    let dur = 0;
+    for (const sets of Object.values(exerciseSets)) {
+      for (const set of sets) {
+        if (set.completed) {
+          dist += set.distance_meters ?? 0;
+          dur += set.duration_seconds ?? 0;
+        }
+      }
+    }
+    return { totalCardioDistanceMeters: dist, totalCardioDurationSeconds: dur };
+  }, [exerciseSets]);
+
+  // Load distance unit preference
+  useEffect(() => {
+    AsyncStorage.getItem('@gym_tracker_distance_unit').then((val) => {
+      if (val === 'mi') setDistanceUnit('mi');
+    });
+  }, []);
 
   const completedSetsCount = useMemo(() =>
     Object.values(exerciseSets).flat().filter((s) => s.completed).length,
@@ -290,17 +314,48 @@ export default function WorkoutScreen() {
       const userId = userData?.user?.id;
       if (userId) {
         const { data: existingPRs } = await db.getPersonalRecords(userId);
-        const prs = detectPRs(exercises, exerciseSets, existingPRs ?? []);
+
+        // Strength PRs
+        const strengthExercises = exercises.filter((e: any) => e.exercise_type !== 'cardio');
+        const prs = detectPRs(strengthExercises, exerciseSets, existingPRs ?? []);
         for (const pr of prs) {
           const sets = (exerciseSets[exercises.find((e: any) => e.exercise_id === pr.exerciseId)?.session_exercise_id] ?? []).filter((s: any) => s.completed);
           const maxW = sets.reduce((m: number, s: any) => (s.weight != null && s.weight > m ? s.weight : m), 0);
           const maxVol = sets.reduce((sum: number, s: any) => s.weight && s.reps ? sum + s.weight * s.reps : sum, 0);
-          await db.upsertPersonalRecord({ user_id: userId, exercise_id: pr.exerciseId, max_weight: maxW || null, max_volume: maxVol || null });
+          await db.upsertPersonalRecord({ user_id: userId, exercise_id: pr.exerciseId, max_weight: maxW || null, max_volume: maxVol || null, pr_type: 'strength' });
         }
-        if (prs.length > 0) {
+
+        // Cardio PRs
+        const cardioExercises = exercises.filter((e: any) => e.exercise_type === 'cardio');
+        const cardioPRMessages: string[] = [];
+        for (const ex of cardioExercises) {
+          const sets = (exerciseSets[ex.session_exercise_id] ?? []);
+          const existingPR = (existingPRs ?? []).find((r: any) => r.exercise_id === ex.exercise_id && r.pr_type === 'cardio') ?? null;
+          const cardioPR = detectCardioPRs(ex, sets, existingPR);
+          if (cardioPR) {
+            await db.upsertPersonalRecord({
+              user_id: userId,
+              exercise_id: ex.exercise_id,
+              max_weight: null,
+              max_volume: null,
+              pr_type: 'cardio',
+              best_distance_meters: cardioPR.bestDistanceMeters ?? null,
+              best_pace_sec_per_km: cardioPR.bestPaceSecPerKm ?? null,
+              best_duration_seconds: cardioPR.bestDurationSeconds ?? null,
+            });
+            if (cardioPR.bestDistanceMeters) cardioPRMessages.push(`${ex.exercise_name}: ${formatDistance(cardioPR.bestDistanceMeters, distanceUnit)}`);
+            else if (cardioPR.bestPaceSecPerKm) cardioPRMessages.push(`${ex.exercise_name}: best pace`);
+          }
+        }
+
+        const allPRMessages = [
+          ...prs.map((p: any) => `${p.exerciseName} (${p.type === "both" ? "weight & volume" : p.type})`),
+          ...cardioPRMessages,
+        ];
+        if (allPRMessages.length > 0) {
           Alert.alert(
             "New PRs!",
-            prs.map((p) => `${p.exerciseName} (${p.type === "both" ? "weight & volume" : p.type})`).join("\n"),
+            allPRMessages.join("\n"),
             [{ text: "OK", onPress: () => setShowPhotoModal(true) }]
           );
           return;
@@ -393,12 +448,14 @@ export default function WorkoutScreen() {
   const handleAddExercise = useGuardedPress(async (exercise: any) => {
     if (!session) return;
     setShowAddExercise(false);
+    const exType = exercise.exercise_type ?? (exercise.category === 'cardio' ? 'cardio' : exercise.category === 'stretching' ? 'stretching' : 'strength');
     const { data: newEx, error } = await db.insertSessionExercise({
       session_id: session.session_id,
       exercise_id: exercise.id,
       exercise_name: exercise.name,
       exercise_order: exercises.length === 0 ? 1 : Math.max(...exercises.map((e) => e.exercise_order)) + 1,
       notes: null,
+      exercise_type: exType,
     });
     if (error) { setError(error.message); return; }
     setExercises((prev) => [...prev, newEx]);
@@ -457,11 +514,35 @@ export default function WorkoutScreen() {
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Duration</Text>
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-        <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.text }]}>{volumeDisplay} {unitLabel}</Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Volume</Text>
-        </View>
-        <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+        {totalVolume > 0 && (
+          <>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: colors.text }]}>{volumeDisplay} {unitLabel}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Volume</Text>
+            </View>
+            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+          </>
+        )}
+        {totalCardioDistanceMeters > 0 && (
+          <>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {formatDistance(totalCardioDistanceMeters, distanceUnit)}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Distance</Text>
+            </View>
+            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+          </>
+        )}
+        {totalCardioDurationSeconds > 0 && totalCardioDistanceMeters === 0 && (
+          <>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: colors.text }]}>{formatDurationShort(totalCardioDurationSeconds)}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Cardio</Text>
+            </View>
+            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+          </>
+        )}
         <View style={styles.statItem}>
           <Text style={[styles.statValue, { color: colors.text }]}>{completedSetsCount}</Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Sets</Text>
@@ -503,26 +584,49 @@ export default function WorkoutScreen() {
                 </Pressable>
               </View>
 
-              {/* Column headers */}
-              <View style={[styles.colHeaders, { borderBottomColor: colors.border }]}>
-                <Text style={[styles.colHeader, styles.colSet, { color: colors.textTertiary }]}>SET</Text>
-                <Text style={[styles.colHeader, styles.colPrev, { color: colors.textTertiary }]}>PREVIOUS</Text>
-                <Text style={[styles.colHeader, styles.colVal, { color: colors.textTertiary }]}>{unitLabel.toUpperCase()}</Text>
-                <Text style={[styles.colHeader, styles.colVal, { color: colors.textTertiary }]}>REPS</Text>
-                <View style={styles.colCheck} />
-              </View>
+              {/* Column headers — vary by exercise type */}
+              {ex.exercise_type === 'cardio' ? (
+                <View style={[styles.colHeaders, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.colHeader, styles.colSet, { color: colors.textTertiary }]}>SET</Text>
+                  <Text style={[styles.colHeader, styles.colPrev, { color: colors.textTertiary }]}>PREVIOUS</Text>
+                  <Text style={[styles.colHeader, styles.colVal, { color: colors.textTertiary }]}>DIST ({distanceUnit})</Text>
+                  <Text style={[styles.colHeader, styles.colVal, { color: colors.textTertiary }]}>DURATION</Text>
+                  <View style={styles.colCheck} />
+                </View>
+              ) : (
+                <View style={[styles.colHeaders, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.colHeader, styles.colSet, { color: colors.textTertiary }]}>SET</Text>
+                  <Text style={[styles.colHeader, styles.colPrev, { color: colors.textTertiary }]}>PREVIOUS</Text>
+                  <Text style={[styles.colHeader, styles.colVal, { color: colors.textTertiary }]}>{unitLabel.toUpperCase()}</Text>
+                  <Text style={[styles.colHeader, styles.colVal, { color: colors.textTertiary }]}>REPS</Text>
+                  <View style={styles.colCheck} />
+                </View>
+              )}
 
-              {/* Set rows */}
+              {/* Set rows — cardio or strength */}
               {sets.map((set, idx) => (
-                <SetRow
-                  key={set.session_set_id}
-                  set={set}
-                  sessionExerciseId={ex.session_exercise_id}
-                  onUpdate={updateSet}
-                  onSetNumberPress={openSetOptions}
-                  prevSet={prevSets[ex.exercise_id]?.[idx]}
-                  onComplete={startRestTimer}
-                />
+                ex.exercise_type === 'cardio' ? (
+                  <CardioSetRow
+                    key={set.session_set_id}
+                    set={set}
+                    sessionExerciseId={ex.session_exercise_id}
+                    onUpdate={updateSet}
+                    onSetNumberPress={openSetOptions}
+                    prevSet={prevSets[ex.exercise_id]?.[idx]}
+                    onComplete={startRestTimer}
+                    distanceUnit={distanceUnit}
+                  />
+                ) : (
+                  <SetRow
+                    key={set.session_set_id}
+                    set={set}
+                    sessionExerciseId={ex.session_exercise_id}
+                    onUpdate={updateSet}
+                    onSetNumberPress={openSetOptions}
+                    prevSet={prevSets[ex.exercise_id]?.[idx]}
+                    onComplete={startRestTimer}
+                  />
+                )
               ))}
 
               {/* + Add Set — full-width dark button */}

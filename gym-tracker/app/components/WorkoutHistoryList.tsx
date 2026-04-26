@@ -15,15 +15,20 @@ export type SessionWithMeta = {
   totalVolume: number;
   totalReps: number;
   exerciseNames: string[];
+  totalCardioDistanceMeters?: number;
+  totalCardioDurationSeconds?: number;
+  hasCardio?: boolean;
 };
 
 type Props = {
   sessions: SessionWithMeta[];
   onDelete?: (sessionId: number) => void;
   onEditWorkout?: (sessionId: number) => void;
+  filterType?: 'all' | 'strength' | 'cardio';
+  distanceUnit?: 'km' | 'mi';
 };
 
-const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions, onDelete, onEditWorkout }: Props) {
+const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions, onDelete, onEditWorkout, filterType = 'all', distanceUnit = 'km' }: Props) {
   const { colors } = useTheme();
 
   if (sessions.length === 0) {
@@ -38,10 +43,16 @@ const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions, onDelete
     );
   }
 
+  const visible = filterType === 'all'
+    ? sessions
+    : filterType === 'cardio'
+    ? sessions.filter((s) => s.hasCardio)
+    : sessions.filter((s) => !s.hasCardio);
+
   return (
     <View style={{ gap: 12 }}>
       <Text style={{ fontSize: 18, fontWeight: "700", color: colors.text, marginBottom: 4 }}>Workout History</Text>
-      {sessions.map((session) => (
+      {visible.map((session) => (
         <WorkoutHistoryCard
           key={session.session_id}
           session_id={session.session_id}
@@ -56,6 +67,9 @@ const WorkoutHistoryList = memo(function WorkoutHistoryList({ sessions, onDelete
           exerciseNames={session.exerciseNames}
           onDelete={onDelete}
           onEditWorkout={onEditWorkout}
+          totalCardioDistanceMeters={session.totalCardioDistanceMeters ?? 0}
+          totalCardioDurationSeconds={session.totalCardioDurationSeconds ?? 0}
+          distanceUnit={distanceUnit}
         />
       ))}
     </View>

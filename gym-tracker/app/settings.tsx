@@ -119,25 +119,58 @@ function AppearanceModal({ visible, onClose }: { visible: boolean; onClose: () =
 function UnitsModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { colors } = useTheme();
   const { unit, saveUnit } = useUnits();
-  const options: { label: string; value: UnitSystem; icon: string }[] = [
+  const [distanceUnit, setDistanceUnit] = useState<"km" | "mi">("km");
+
+  useEffect(() => {
+    if (visible) {
+      AsyncStorage.getItem("@gym_tracker_distance_unit").then((val) => {
+        setDistanceUnit(val === "mi" ? "mi" : "km");
+      });
+    }
+  }, [visible]);
+
+  const saveDistanceUnit = async (u: "km" | "mi") => {
+    setDistanceUnit(u);
+    await AsyncStorage.setItem("@gym_tracker_distance_unit", u);
+  };
+
+  const weightOptions: { label: string; value: UnitSystem; icon: string }[] = [
     { label: "Pounds (lbs)", value: "lbs", icon: "🇺🇸" },
     { label: "Kilograms (kg)", value: "kg", icon: "🌍" },
   ];
+  const distanceOptions: { label: string; value: "km" | "mi"; icon: string }[] = [
+    { label: "Miles (mi)", value: "mi", icon: "🇺🇸" },
+    { label: "Kilometers (km)", value: "km", icon: "🌍" },
+  ];
+
   return (
     <ModalShell visible={visible} onClose={onClose} title="Units">
-      {options.map((opt) => (
+      <Text style={{ fontSize: 13, fontWeight: "600", color: colors.textSecondary, marginBottom: 8, marginLeft: 4 }}>Weight</Text>
+      {weightOptions.map((opt) => (
         <Pressable
           key={opt.value}
           style={({ pressed }) => [{ flexDirection: "row", alignItems: "center", paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8, backgroundColor: unit === opt.value ? colors.primaryLight : "transparent", borderWidth: unit === opt.value ? 2 : 1, borderColor: unit === opt.value ? colors.primary : colors.border }, pressed && { opacity: 0.7 }]}
-          onPress={() => { saveUnit(opt.value); onClose(); }}
+          onPress={() => { saveUnit(opt.value); }}
         >
           <Text style={{ fontSize: 24, marginRight: 14 }}>{opt.icon}</Text>
           <Text style={{ fontSize: 16, fontWeight: "600", color: colors.text, flex: 1 }}>{opt.label}</Text>
           {unit === opt.value && <Text style={{ fontSize: 18, color: colors.primary, fontWeight: "700" }}>✓</Text>}
         </Pressable>
       ))}
+      <Text style={{ fontSize: 13, fontWeight: "600", color: colors.textSecondary, marginBottom: 8, marginTop: 12, marginLeft: 4 }}>Distance</Text>
+      {distanceOptions.map((opt) => (
+        <Pressable
+          key={opt.value}
+          style={({ pressed }) => [{ flexDirection: "row", alignItems: "center", paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8, backgroundColor: distanceUnit === opt.value ? colors.primaryLight : "transparent", borderWidth: distanceUnit === opt.value ? 2 : 1, borderColor: distanceUnit === opt.value ? colors.primary : colors.border }, pressed && { opacity: 0.7 }]}
+          onPress={() => { saveDistanceUnit(opt.value); }}
+        >
+          <Text style={{ fontSize: 24, marginRight: 14 }}>{opt.icon}</Text>
+          <Text style={{ fontSize: 16, fontWeight: "600", color: colors.text, flex: 1 }}>{opt.label}</Text>
+          {distanceUnit === opt.value && <Text style={{ fontSize: 18, color: colors.primary, fontWeight: "700" }}>✓</Text>}
+        </Pressable>
+      ))}
       <Pressable style={{ marginTop: 4, paddingVertical: 12, borderRadius: 10, backgroundColor: colors.surfaceSecondary, alignItems: "center" }} onPress={onClose}>
-        <Text style={{ fontSize: 16, fontWeight: "600", color: colors.textSecondary }}>Cancel</Text>
+        <Text style={{ fontSize: 16, fontWeight: "600", color: colors.textSecondary }}>Done</Text>
       </Pressable>
     </ModalShell>
   );

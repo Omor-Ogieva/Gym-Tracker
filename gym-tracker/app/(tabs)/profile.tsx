@@ -9,6 +9,7 @@ import { useUnits } from "../utils/units";
 import WorkoutHistoryCard from "../components/WorkoutHistoryCard";
 import { SessionWithMeta } from "../components/WorkoutHistoryList";
 import WorkoutChart from "../components/WorkoutChart";
+import { formatDistance, formatDurationShort, formatPace } from "../utils/cardioUtils";
 
 // ─── Stat definitions ─────────────────────────────────────────────────────────
 
@@ -121,6 +122,15 @@ export default function ProfileScreen() {
   });
   const [selectedStats, setSelectedStats] = useState<StatId[]>(DEFAULT_STATS);
   const [customizerOpen, setCustomizerOpen] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'strength' | 'cardio'>('all');
+  const [distanceUnit, setDistanceUnit] = useState<'km' | 'mi'>('km');
+  const [cardioStats, setCardioStats] = useState<{
+    totalDistanceMeters: number;
+    totalDurationSeconds: number;
+    totalCardioSessions: number;
+    longestRunMeters: number;
+    fastestPaceSecPerKm: number | null;
+  } | null>(null);
 
   const hasDataRef = useRef(false);
   const lastFetchedRef = useRef(0);
@@ -138,6 +148,11 @@ export default function ProfileScreen() {
     }
     setError(null);
 
+    // Load distance unit preference
+    AsyncStorage.getItem('@gym_tracker_distance_unit').then((val) => {
+      if (val === 'mi') setDistanceUnit('mi');
+    });
+
     // Load saved stat selection in parallel with the DB fetch
     const savedStatsPromise = AsyncStorage.getItem(STATS_STORAGE_KEY).then((val) => {
       if (!val) return DEFAULT_STATS;
@@ -152,11 +167,14 @@ export default function ProfileScreen() {
       const { data: { user } } = await db.getUser();
       if (!user) { setError("Not authenticated"); return; }
 
-      const [profileResult, sessionsResult, savedStatIds] = await Promise.all([
+      const [profileResult, sessionsResult, savedStatIds, cardioStatsResult] = await Promise.all([
         db.getUserProfile(user.id),
         db.getWorkoutSessions(user.id),
         savedStatsPromise,
+        db.getCardioStats(user.id),
       ]);
+
+      if (cardioStatsResult.data) setCardioStats(cardioStatsResult.data);
 
       setSelectedStats(savedStatIds);
 
@@ -191,16 +209,26 @@ export default function ProfileScreen() {
         const exs = exercisesBySession[s.session_id] ?? [];
         let sessionVolume = 0;
         let sessionReps = 0;
+        let sessionCardioDistance = 0;
+        let sessionCardioDuration = 0;
+        let sessionHasCardio = false;
         for (const ex of exs) {
           uniqueExercises.add(ex.exercise_id);
+          const isCardio = ex.exercise_type === 'cardio';
+          if (isCardio) sessionHasCardio = true;
           for (const set of setsByExercise[ex.session_exercise_id] ?? []) {
             if (set.completed) {
               overallSets++;
-              if (set.weight != null && set.reps != null) {
-                sessionVolume += set.weight * set.reps;
-                heaviestWeight = Math.max(heaviestWeight, set.weight);
+              if (!isCardio) {
+                if (set.weight != null && set.reps != null) {
+                  sessionVolume += set.weight * set.reps;
+                  heaviestWeight = Math.max(heaviestWeight, set.weight);
+                }
+                if (set.reps != null) sessionReps += set.reps;
+              } else {
+                sessionCardioDistance += set.distance_meters ?? 0;
+                sessionCardioDuration += set.duration_seconds ?? 0;
               }
-              if (set.reps != null) sessionReps += set.reps;
             }
           }
         }
@@ -218,6 +246,9 @@ export default function ProfileScreen() {
           totalVolume: sessionVolume,
           totalReps: sessionReps,
           exerciseNames: exs.map((ex: any) => ex.exercise_name),
+          totalCardioDistanceMeters: sessionCardioDistance,
+          totalCardioDurationSeconds: sessionCardioDuration,
+          hasCardio: sessionHasCardio,
         };
       });
 
@@ -445,9 +476,74 @@ export default function ProfileScreen() {
       {/* ── Progress chart ── */}
       {sessions.length > 0 && <WorkoutChart sessions={sessions} />}
 
-      {/* ── Workout history header ── */}
-      <View style={styles.sectionHeader}>
+      {/* ── Cardio Summary ── */}
+      {cardioStats && cardioStats.totalCardioSessions > 0 && (
+        <View style={[styles.card, { backgroundColor: colors.surface, marginHorizontal: 16, marginBottom: 12 }]}>
+          <View style={styles.cardHeader}>
+            <Text style={[styles.cardTitle, { color: colors.textSecondary }]}>CARDIO SUMMARY</Text>
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16 }}>
+            <View>
+              <Text style={[styles.statNum, { color: colors.text, fontSize: 17 }]}>
+                {formatDistance(cardioStats.totalDistanceMeters, distanceUnit)}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Total Distance</Text>
+            </View>
+            <View>
+              <Text style={[styles.statNum, { color: colors.text, fontSize: 17 }]}>
+                {formatDurationShort(cardioStats.totalDurationSeconds)}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Total Time</Text>
+            </View>
+            <View>
+              <Text style={[styles.statNum, { color: colors.text, fontSize: 17 }]}>
+                {String(cardioStats.totalCardioSessions)}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Sessions</Text>
+            </View>
+            {cardioStats.longestRunMeters > 0 && (
+              <View>
+                <Text style={[styles.statNum, { color: colors.text, fontSize: 17 }]}>
+                  {formatDistance(cardioStats.longestRunMeters, distanceUnit)}
+                </Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Best Run</Text>
+              </View>
+            )}
+            {cardioStats.fastestPaceSecPerKm != null && (
+              <View>
+                <Text style={[styles.statNum, { color: colors.text, fontSize: 17 }]}>
+                  {formatPace(cardioStats.fastestPaceSecPerKm)}
+                </Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Best Pace</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* ── Workout history header + filter ── */}
+      <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Workouts</Text>
+        {sessions.some((s) => s.hasCardio) && (
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            {(['all', 'strength', 'cardio'] as const).map((f) => (
+              <Pressable
+                key={f}
+                onPress={() => setHistoryFilter(f)}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 12,
+                  backgroundColor: historyFilter === f ? colors.primary : colors.surfaceSecondary,
+                }}
+              >
+                <Text style={{ fontSize: 11, fontWeight: '600', color: historyFilter === f ? '#fff' : colors.textSecondary, textTransform: 'capitalize' }}>
+                  {f}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
       </View>
     </>
   );
@@ -462,10 +558,16 @@ export default function ProfileScreen() {
     </View>
   );
 
+  const filteredSessions = historyFilter === 'all'
+    ? sessions
+    : historyFilter === 'cardio'
+    ? sessions.filter((s) => s.hasCardio)
+    : sessions.filter((s) => !s.hasCardio);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <FlatList
-        data={sessions}
+        data={filteredSessions}
         keyExtractor={(item) => String(item.session_id)}
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 80 }}
@@ -488,6 +590,9 @@ export default function ProfileScreen() {
               exerciseNames={item.exerciseNames}
               onDelete={handleDeleteSession}
               onEditWorkout={handleEditWorkout}
+              totalCardioDistanceMeters={item.totalCardioDistanceMeters ?? 0}
+              totalCardioDurationSeconds={item.totalCardioDurationSeconds ?? 0}
+              distanceUnit={distanceUnit}
             />
           </View>
         )}

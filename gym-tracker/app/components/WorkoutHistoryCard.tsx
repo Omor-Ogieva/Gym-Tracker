@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { db } from "../backend/db";
 import { useTheme } from "../theme/ThemeContext";
 import { useUnits } from "../utils/units";
+import { formatDistance, formatDurationShort } from "../utils/cardioUtils";
 
 type WorkoutHistoryCardProps = {
   session_id: number;
@@ -19,6 +20,9 @@ type WorkoutHistoryCardProps = {
   exerciseNames?: string[];
   onDelete?: (sessionId: number) => void;
   onEditWorkout?: (sessionId: number) => void;
+  totalCardioDistanceMeters?: number;
+  totalCardioDurationSeconds?: number;
+  distanceUnit?: 'km' | 'mi';
 };
 
 function fullDate(dateStr: string): string {
@@ -67,6 +71,9 @@ const WorkoutHistoryCard = memo(function WorkoutHistoryCard({
   exerciseNames = [],
   onDelete,
   onEditWorkout,
+  totalCardioDistanceMeters = 0,
+  totalCardioDurationSeconds = 0,
+  distanceUnit = 'km',
 }: WorkoutHistoryCardProps) {
   const { colors } = useTheme();
   const { toDisplay, label: unitLabel } = useUnits();
@@ -160,10 +167,24 @@ const WorkoutHistoryCard = memo(function WorkoutHistoryCard({
           <Text style={[styles.statValue, { color: colors.textSecondary }]}>{exerciseCount}</Text>
           <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Exercises</Text>
         </View>
-        <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.textSecondary }]}>{volumeDisplay} {unitLabel}</Text>
-          <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Volume</Text>
-        </View>
+        {totalVolume > 0 && (
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { color: colors.textSecondary }]}>{volumeDisplay} {unitLabel}</Text>
+            <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Volume</Text>
+          </View>
+        )}
+        {totalCardioDistanceMeters > 0 && (
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { color: colors.textSecondary }]}>{formatDistance(totalCardioDistanceMeters, distanceUnit)}</Text>
+            <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Distance</Text>
+          </View>
+        )}
+        {totalCardioDurationSeconds > 0 && totalCardioDistanceMeters === 0 && (
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { color: colors.textSecondary }]}>{formatDurationShort(totalCardioDurationSeconds)}</Text>
+            <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Cardio</Text>
+          </View>
+        )}
       </View>
 
       {/* Exercise list */}

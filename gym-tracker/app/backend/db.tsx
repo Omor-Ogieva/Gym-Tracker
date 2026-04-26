@@ -200,9 +200,10 @@ export const db = {
     exercise_id: string;
     exercise_name: string;
     exercise_order: number;
+    exercise_type?: 'strength' | 'cardio' | 'stretching';
   }) => {
     if (useSupabase()) {
-      return supabase.from("routine_exercises").insert(exercise);
+      return supabase.from("routine_exercises").insert({ exercise_type: 'strength', ...exercise });
     }
     return localDb.insertRoutineExercise(exercise);
   },
@@ -239,6 +240,9 @@ export const db = {
     target_weight: number | null;
     target_reps: number | null;
     is_warmup: boolean;
+    target_duration_seconds?: number | null;
+    target_distance_meters?: number | null;
+    target_effort_level?: number | null;
   }) => {
     if (useSupabase()) {
       return supabase.from("routine_exercise_sets").insert(set);
@@ -255,7 +259,7 @@ export const db = {
 
   updateRoutineExerciseSet: async (
     routineSetId: number,
-    updates: { target_reps?: number | null; target_weight?: number | null; is_warmup?: boolean }
+    updates: { target_reps?: number | null; target_weight?: number | null; is_warmup?: boolean; target_duration_seconds?: number | null; target_distance_meters?: number | null; target_effort_level?: number | null }
   ) => {
     if (useSupabase()) {
       return supabase
@@ -323,6 +327,7 @@ export const db = {
             exercise_name: ex.exercise_name,
             exercise_order: ex.exercise_order,
             notes: ex.notes,
+            exercise_type: (ex as any).exercise_type ?? 'strength',
           })),
           sets,
         });
@@ -402,9 +407,9 @@ export const db = {
     return localDb.getSessionExercises(sessionId);
   },
 
-  insertSessionExercise: async (exercise: { session_id: number; exercise_id: string; exercise_name: string; exercise_order: number; notes: string | null }) => {
+  insertSessionExercise: async (exercise: { session_id: number; exercise_id: string; exercise_name: string; exercise_order: number; notes: string | null; exercise_type?: 'strength' | 'cardio' | 'stretching' }) => {
     if (useSupabase()) {
-      return supabase.from("session_exercises").insert(exercise).select().single();
+      return supabase.from("session_exercises").insert({ exercise_type: 'strength', ...exercise }).select().single();
     }
     return localDb.insertSessionExercise(exercise);
   },
@@ -435,14 +440,14 @@ export const db = {
     return localDb.getSessionExerciseSets(sessionExerciseId);
   },
 
-  insertSessionExerciseSet: async (set: { session_exercise_id: number; set_number: number; weight: number | null; reps: number | null; is_warmup: boolean; completed?: boolean }) => {
+  insertSessionExerciseSet: async (set: { session_exercise_id: number; set_number: number; weight: number | null; reps: number | null; is_warmup: boolean; completed?: boolean; duration_seconds?: number | null; distance_meters?: number | null; pace_sec_per_km?: number | null; calories?: number | null; effort_level?: number | null }) => {
     if (useSupabase()) {
       return supabase.from("session_exercise_sets").insert(set).select().single();
     }
     return localDb.insertSessionExerciseSet(set);
   },
 
-  updateSessionExerciseSet: async (sessionSetId: number, updates: { reps?: number | null; weight?: number | null; is_warmup?: boolean; completed?: boolean }) => {
+  updateSessionExerciseSet: async (sessionSetId: number, updates: { reps?: number | null; weight?: number | null; is_warmup?: boolean; completed?: boolean; duration_seconds?: number | null; distance_meters?: number | null; pace_sec_per_km?: number | null; calories?: number | null; effort_level?: number | null }) => {
     if (useSupabase()) {
       return supabase.from("session_exercise_sets").update(updates).eq("session_set_id", sessionSetId);
     }
@@ -493,6 +498,7 @@ export const db = {
         exercise_name: ex.exercise_name,
         exercise_order: ex.exercise_order,
         notes: null,
+        exercise_type: ex.exercise_type ?? 'strength',
       }));
       const { data: sessionExercises, error: exErr } = await supabase
         .from("session_exercises").insert(exerciseInserts).select();
@@ -509,9 +515,12 @@ export const db = {
           setInserts.push({
             session_exercise_id: sessionEx.session_exercise_id,
             set_number: ts.set_number,
-            weight: ts.target_weight,
-            reps: ts.target_reps,
+            weight: ts.target_weight ?? null,
+            reps: ts.target_reps ?? null,
             is_warmup: ts.is_warmup,
+            duration_seconds: ts.target_duration_seconds ?? null,
+            distance_meters: ts.target_distance_meters ?? null,
+            effort_level: ts.target_effort_level ?? null,
           });
         }
       });
@@ -563,9 +572,16 @@ export const db = {
     exercise_id: string;
     max_weight: number | null;
     max_volume: number | null;
+    pr_type?: 'strength' | 'cardio';
+    best_distance_meters?: number | null;
+    best_pace_sec_per_km?: number | null;
+    best_duration_seconds?: number | null;
   }) => {
     if (useSupabase()) {
-      return supabase.from("personal_records").upsert(record, { onConflict: "user_id,exercise_id" });
+      return supabase.from("personal_records").upsert(
+        { pr_type: 'strength', ...record },
+        { onConflict: "user_id,exercise_id,pr_type" }
+      );
     }
     return localDb.upsertPersonalRecord(record);
   },
@@ -584,9 +600,10 @@ export const db = {
     name: string;
     primary_muscle: string | null;
     equipment: string | null;
+    exercise_type?: 'strength' | 'cardio' | 'stretching';
   }) => {
     if (useSupabase()) {
-      return supabase.from("custom_exercises").insert(exercise);
+      return supabase.from("custom_exercises").insert({ exercise_type: 'strength', ...exercise });
     }
     return localDb.insertCustomExercise(exercise);
   },
@@ -686,6 +703,7 @@ export const db = {
               exercise_name: ex.exercise_name,
               exercise_order: ex.exercise_order,
               notes: ex.notes,
+              exercise_type: (ex as any).exercise_type ?? 'strength',
             })
             .select()
             .single();
@@ -702,6 +720,11 @@ export const db = {
             reps: s.reps,
             is_warmup: s.is_warmup,
             completed: s.completed,
+            duration_seconds: (s as any).duration_seconds ?? null,
+            distance_meters: (s as any).distance_meters ?? null,
+            pace_sec_per_km: (s as any).pace_sec_per_km ?? null,
+            calories: (s as any).calories ?? null,
+            effort_level: (s as any).effort_level ?? null,
           }));
         if (setsToInsert.length > 0) {
           await supabase.from("session_exercise_sets").insert(setsToInsert);
@@ -719,4 +742,52 @@ export const db = {
   },
 
   getPendingSessionCount: async (): Promise<number> => getPendingCount(),
+
+  // Cardio aggregate stats
+  getCardioStats: async (userId: string) => {
+    if (useSupabase()) {
+      // Fetch all cardio session exercises for this user's completed sessions
+      const { data: cardioExercises } = await supabase
+        .from("session_exercises")
+        .select("session_exercise_id, workout_sessions!inner(user_id, end_time)")
+        .eq("exercise_type", "cardio")
+        .eq("workout_sessions.user_id", userId)
+        .not("workout_sessions.end_time", "is", null);
+
+      if (!cardioExercises || cardioExercises.length === 0) {
+        return { data: { totalDistanceMeters: 0, totalDurationSeconds: 0, totalCardioSessions: 0, longestRunMeters: 0, fastestPaceSecPerKm: null }, error: null };
+      }
+
+      const exerciseIds = cardioExercises.map((e: any) => e.session_exercise_id);
+      const { data: sets } = await supabase
+        .from("session_exercise_sets")
+        .select("*")
+        .in("session_exercise_id", exerciseIds)
+        .eq("completed", true);
+
+      let totalDistanceMeters = 0;
+      let totalDurationSeconds = 0;
+      let longestRunMeters = 0;
+      let fastestPaceSecPerKm: number | null = null;
+      const sessionIds = new Set<number>();
+
+      for (const s of sets ?? []) {
+        if (!s.duration_seconds && !s.distance_meters) continue;
+        totalDistanceMeters += s.distance_meters ?? 0;
+        totalDurationSeconds += s.duration_seconds ?? 0;
+        if ((s.distance_meters ?? 0) > longestRunMeters) longestRunMeters = s.distance_meters;
+        if (s.pace_sec_per_km && s.pace_sec_per_km > 0) {
+          if (fastestPaceSecPerKm === null || s.pace_sec_per_km < fastestPaceSecPerKm) fastestPaceSecPerKm = s.pace_sec_per_km;
+        }
+      }
+
+      // Count distinct sessions with cardio
+      for (const e of cardioExercises) {
+        sessionIds.add((e as any).workout_sessions?.session_id);
+      }
+
+      return { data: { totalDistanceMeters, totalDurationSeconds, totalCardioSessions: sessionIds.size, longestRunMeters, fastestPaceSecPerKm }, error: null };
+    }
+    return localDb.getCardioStats(userId);
+  },
 };
