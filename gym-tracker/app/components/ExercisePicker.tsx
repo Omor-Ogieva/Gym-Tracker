@@ -189,8 +189,8 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={{ borderBottomWidth: 1, borderBottomColor: colors.border }}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 10, gap: 8, flexDirection: 'row' }}
+          style={{ borderBottomWidth: 1, borderBottomColor: colors.border, flexGrow: 0, flexShrink: 0 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, gap: 8, flexDirection: 'row', alignItems: 'center' }}
         >
           {CATEGORY_TABS.map((tab) => {
             const active = activeCategory === tab.key;
@@ -199,9 +199,9 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
                 key={tab.key}
                 onPress={() => setActiveCategory(tab.key)}
                 style={{
-                  paddingHorizontal: 16,
-                  paddingVertical: 7,
-                  borderRadius: 20,
+                  paddingHorizontal: 14,
+                  paddingVertical: 5,
+                  borderRadius: 999,
                   backgroundColor: active ? colors.primary : colors.surfaceSecondary,
                   borderWidth: 1,
                   borderColor: active ? colors.primary : colors.border,
@@ -219,6 +219,7 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
           data={filtered.slice(0, 50)}
           keyExtractor={(ex) => ex.id}
           keyboardShouldPersistTaps="handled"
+          style={{ flex: 1 }}
           contentContainerStyle={{ paddingBottom: 40 }}
           ListHeaderComponent={search.length === 0 ? (
             <Text style={{ textAlign: "center", color: colors.textTertiary, marginTop: 40, fontSize: 15 }}>

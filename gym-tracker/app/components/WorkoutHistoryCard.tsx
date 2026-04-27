@@ -81,6 +81,7 @@ const WorkoutHistoryCard = memo(function WorkoutHistoryCard({
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [photoOpen, setPhotoOpen] = useState(false);
 
   const duration = parseDuration(sessionDate, startTime, endTime);
   const volumeDisplay = (toDisplay(totalVolume) ?? totalVolume).toLocaleString();
@@ -208,8 +209,17 @@ const WorkoutHistoryCard = memo(function WorkoutHistoryCard({
       ) : null}
 
       {photo_url ? (
-        <Image source={{ uri: photo_url }} style={styles.progressPhoto} resizeMode="cover" />
+        <Pressable onPress={() => setPhotoOpen(true)} style={styles.progressPhotoContainer}>
+          <Image source={{ uri: photo_url }} style={styles.progressPhoto} resizeMode="contain" />
+        </Pressable>
       ) : null}
+
+      {/* ── Photo lightbox ── */}
+      <Modal visible={photoOpen} transparent animationType="fade" onRequestClose={() => setPhotoOpen(false)}>
+        <Pressable style={styles.lightboxOverlay} onPress={() => setPhotoOpen(false)}>
+          <Image source={{ uri: photo_url ?? undefined }} style={styles.lightboxImage} resizeMode="contain" />
+        </Pressable>
+      </Modal>
 
       {/* ── Action sheet ── */}
       <Modal visible={menuOpen} transparent animationType="slide" onRequestClose={() => setMenuOpen(false)}>
@@ -289,12 +299,25 @@ const styles = StyleSheet.create({
   exerciseName: { fontSize: 13 },
   moreText: { fontSize: 12, marginTop: 2 },
   notes: { fontSize: 12, fontStyle: "italic", marginTop: 6 },
+  progressPhotoContainer: {
+    marginTop: 10,
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: "#000",
+  },
   progressPhoto: {
     width: "100%",
-    height: 220,
-    borderRadius: 10,
-    marginTop: 10,
-    overflow: "hidden",
+    aspectRatio: 4 / 3,
+  },
+  lightboxOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.92)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  lightboxImage: {
+    width: "100%",
+    height: "100%",
   },
 
   // Action sheet

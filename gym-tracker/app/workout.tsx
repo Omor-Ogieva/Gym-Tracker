@@ -382,10 +382,19 @@ export default function WorkoutScreen() {
       if (userId) {
         const { url, error: uploadError } = await db.uploadProgressPhoto(userId, sessionId, uri);
         if (uploadError) {
-          // Non-fatal: warn but still navigate
-          Alert.alert("Photo Upload Failed", uploadError, [{ text: "OK" }]);
-        } else if (url) {
-          await db.updateSessionPhotoUrl(sessionId, url);
+          setPhotoUploading(false);
+          setShowPhotoModal(false);
+          Alert.alert("Photo Upload Failed", uploadError, [{ text: "OK", onPress: () => router.back() }]);
+          return;
+        }
+        if (url) {
+          const { error: saveError } = await db.updateSessionPhotoUrl(sessionId, url) as any;
+          if (saveError) {
+            setPhotoUploading(false);
+            setShowPhotoModal(false);
+            Alert.alert("Photo Save Failed", saveError.message ?? "Could not link photo to workout.", [{ text: "OK", onPress: () => router.back() }]);
+            return;
+          }
         }
       } else {
         // Offline or unauthenticated — store local URI so it's still visible
