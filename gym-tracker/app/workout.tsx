@@ -827,44 +827,22 @@ const SetRow = memo(function SetRow({
   const { colors } = useTheme();
   const [weight, setWeight] = useState(set.weight != null ? String(set.weight) : "");
   const [reps, setReps] = useState(set.reps != null ? String(set.reps) : "");
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFocused = useRef<"weight" | "reps" | null>(null);
 
   useEffect(() => {
-    setWeight(set.weight != null ? String(set.weight) : "");
-    setReps(set.reps != null ? String(set.reps) : "");
+    if (isFocused.current !== "weight") setWeight(set.weight != null ? String(set.weight) : "");
+    if (isFocused.current !== "reps") setReps(set.reps != null ? String(set.reps) : "");
   }, [set.weight, set.reps]);
 
   const commitWeight = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      const val = weight ? parseFloat(weight) : null;
-      if (val !== set.weight) onUpdate(set.session_set_id, sessionExerciseId, { weight: val });
-    }, 500);
-  }, [weight, set.weight, set.session_set_id, sessionExerciseId, onUpdate]);
-
-  const commitReps = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      const val = reps ? parseInt(reps, 10) : null;
-      if (val !== set.reps) onUpdate(set.session_set_id, sessionExerciseId, { reps: val });
-    }, 500);
-  }, [reps, set.reps, set.session_set_id, sessionExerciseId, onUpdate]);
-
-  const commitWeightNow = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
     const val = weight ? parseFloat(weight) : null;
     if (val !== set.weight) onUpdate(set.session_set_id, sessionExerciseId, { weight: val });
   }, [weight, set.weight, set.session_set_id, sessionExerciseId, onUpdate]);
 
-  const commitRepsNow = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+  const commitReps = useCallback(() => {
     const val = reps ? parseInt(reps, 10) : null;
     if (val !== set.reps) onUpdate(set.session_set_id, sessionExerciseId, { reps: val });
   }, [reps, set.reps, set.session_set_id, sessionExerciseId, onUpdate]);
-
-  useEffect(() => {
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, []);
 
   const toggleCompleted = useCallback(() => {
     const weightVal = weight ? parseFloat(weight) : null;
@@ -926,8 +904,9 @@ const SetRow = memo(function SetRow({
           color: isCompleted ? colors.success : colors.text,
         }]}
         value={weight}
-        onChangeText={(t) => { setWeight(t); commitWeight(); }}
-        onBlur={commitWeightNow}
+        onChangeText={setWeight}
+        onFocus={() => { isFocused.current = "weight"; }}
+        onBlur={() => { isFocused.current = null; commitWeight(); }}
         keyboardType="numeric"
         placeholder="—"
         placeholderTextColor={colors.textTertiary}
@@ -942,8 +921,9 @@ const SetRow = memo(function SetRow({
           color: isCompleted ? colors.success : colors.text,
         }]}
         value={reps}
-        onChangeText={(t) => { setReps(t); commitReps(); }}
-        onBlur={commitRepsNow}
+        onChangeText={setReps}
+        onFocus={() => { isFocused.current = "reps"; }}
+        onBlur={() => { isFocused.current = null; commitReps(); }}
         keyboardType="numeric"
         placeholder="—"
         placeholderTextColor={colors.textTertiary}
