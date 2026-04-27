@@ -297,7 +297,6 @@ export default function RoutineScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
-        automaticallyAdjustKeyboardInsets
         showsVerticalScrollIndicator={false}
       >
         {error && (
@@ -833,7 +832,7 @@ const styles = StyleSheet.create({
   startBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
   menuBtn: { padding: 2 },
 
-  scrollContent: { paddingVertical: 12, paddingHorizontal: 16, gap: 12, paddingBottom: 60 },
+  scrollContent: { paddingVertical: 12, paddingHorizontal: 16, gap: 12, paddingBottom: 120 },
 
   errorBanner: { borderRadius: 10, padding: 12 },
   errorText: { fontSize: 14, fontWeight: "500" },

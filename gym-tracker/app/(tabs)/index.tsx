@@ -169,7 +169,7 @@ export default function WorkoutsScreen() {
               placeholderTextColor={colors.textTertiary}
               value={routineName}
               onChangeText={setRoutineName}
-              onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)}
+              returnKeyType="next"
             />
             <TextInput
               style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
@@ -177,7 +177,7 @@ export default function WorkoutsScreen() {
               placeholderTextColor={colors.textTertiary}
               value={description}
               onChangeText={setDescription}
-              onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)}
+              returnKeyType="done"
             />
             <View style={{ flexDirection: "row", gap: 10 }}>
               <Pressable
