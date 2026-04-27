@@ -164,7 +164,7 @@ export const db = {
 
   insertRoutine: async (routine: { routine_name: string; description: string | null; user_id: string }) => {
     if (useSupabase()) {
-      return supabase.from("routines").insert(routine);
+      return supabase.from("routines").insert(routine).select().single();
     }
     return localDb.insertRoutine(routine);
   },
@@ -203,7 +203,7 @@ export const db = {
     exercise_type?: 'strength' | 'cardio' | 'stretching';
   }) => {
     if (useSupabase()) {
-      return supabase.from("routine_exercises").insert({ exercise_type: 'strength', ...exercise });
+      return supabase.from("routine_exercises").insert({ exercise_type: 'strength', ...exercise }).select().single();
     }
     return localDb.insertRoutineExercise(exercise);
   },

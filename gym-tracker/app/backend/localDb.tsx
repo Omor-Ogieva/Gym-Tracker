@@ -200,7 +200,7 @@ export const localDb = {
       created_at: new Date().toISOString(),
     };
     localRoutines.push(newRoutine);
-    return { error: null };
+    return { data: newRoutine, error: null };
   },
 
   updateRoutine: async (routineId: number, updates: { routine_name?: string; description?: string | null; routine_order?: number }) => {
@@ -244,7 +244,7 @@ export const localDb = {
       ...exercise,
     };
     localRoutineExercises.push(newExercise);
-    return { error: null };
+    return { data: newExercise, error: null };
   },
 
   deleteRoutineExercise: async (routineExerciseId: number) => {

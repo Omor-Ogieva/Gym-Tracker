@@ -144,19 +144,13 @@ export default function WorkoutsScreen() {
       >
         {/* ── Page header ── */}
         <View style={[styles.pageHeader, { borderBottomColor: colors.border }]}>
-          <Text style={[styles.pageTitle, { color: colors.text }]}>Workouts</Text>
+          <Text style={[styles.pageTitle, { color: colors.text }]}>Workout</Text>
           <View style={styles.headerRight}>
             {!isOnline && (
               <View style={[styles.offlineBadge, { backgroundColor: colors.warningLight }]}>
                 <Text style={[styles.offlineText, { color: colors.warning }]}>Offline</Text>
               </View>
             )}
-            <Pressable
-              style={[styles.createBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => { setShowForm((v) => !v); setRoutineName(""); setDescription(""); }}
-            >
-              <Ionicons name={showForm ? "close" : "add"} size={20} color={colors.primary} />
-            </Pressable>
           </View>
         </View>
 
@@ -199,9 +193,33 @@ export default function WorkoutsScreen() {
           </View>
         )}
 
-        {/* ── Routines section label ── */}
-        <View style={styles.sectionRow}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>My Routines</Text>
+        {/* ── Routines section label + action buttons ── */}
+        <View style={[styles.sectionRow, { flexDirection: "row", alignItems: "center" }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text, flex: 1 }]}>Routines</Text>
+          <View style={styles.routineActions}>
+            <Pressable
+              style={[styles.actionBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => { setShowForm((v) => !v); setRoutineName(""); setDescription(""); }}
+            >
+              <Ionicons name="document-text-outline" size={15} color={colors.text} />
+              <Text style={[styles.actionBtnText, { color: colors.text }]}>New Routine</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.actionBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push("/explore")}
+            >
+              <Ionicons name="compass-outline" size={15} color={colors.text} />
+              <Text style={[styles.actionBtnText, { color: colors.text }]}>Explore</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* ── My Routines label ── */}
+        <View style={styles.myRoutinesRow}>
+          <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+          <Text style={[styles.myRoutinesLabel, { color: colors.textSecondary }]}>
+            My Routines ({routines.length})
+          </Text>
         </View>
 
         {/* ── Routine list ── */}
@@ -212,7 +230,7 @@ export default function WorkoutsScreen() {
             <Ionicons name="barbell-outline" size={40} color={colors.textTertiary} />
             <Text style={[styles.emptyText, { color: colors.textTertiary }]}>No routines yet</Text>
             <Text style={[styles.emptySubText, { color: colors.textTertiary }]}>
-              Tap + to create your first routine
+              Tap "New Routine" to start, or try Explore for premade programs
             </Text>
           </View>
         ) : (
@@ -397,8 +415,27 @@ const styles = StyleSheet.create({
   formSaveBtn: { flex: 2, paddingVertical: 12, borderRadius: 10, alignItems: "center" },
   formSaveText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 
-  sectionRow: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8 },
+  sectionRow: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
   sectionTitle: { fontSize: 17, fontWeight: "700" },
+  routineActions: { flexDirection: "row", gap: 8 },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  actionBtnText: { fontSize: 13, fontWeight: "600" },
+  myRoutinesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+  },
+  myRoutinesLabel: { fontSize: 14, fontWeight: "600" },
 
   emptyState: { alignItems: "center", paddingVertical: 48, gap: 8 },
   emptyText: { fontSize: 17, fontWeight: "600" },
