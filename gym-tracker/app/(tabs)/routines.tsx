@@ -1,6 +1,7 @@
 // app/(tabs)/routines.tsx
 import React, { useState, useEffect } from 'react';
 import ExerciseSearchModal from '../../components/ExerciseSearchModal';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   StyleSheet,
   View,
@@ -155,7 +156,7 @@ const RoutineCard = ({ routine, onDelete, onUse, onEdit }: RoutineCardProps) => 
   );
 };
 
-const MAX_ROUTINE_WEIGHT_LBS = 1150;
+const MAX_ROUTINE_WEIGHT_LBS = 1500;
 
 function clampRoutineWeightInput(text: string): string {
   if (text === '') return '';
@@ -614,20 +615,28 @@ export default function RoutinesScreen() {
     return `${dayLabel} • ${routine.exercises.length} exercises`;
   };
 
-  useEffect(() => {
-    loadRoutines();
-  }, []);
-
-  const loadRoutines = async () => {
+  const loadRoutines = React.useCallback(async () => {
     try {
       const saved = await AsyncStorage.getItem(STORAGE_KEY);
       if (saved) {
         setRoutines(JSON.parse(saved));
+      } else {
+        setRoutines([]);
       }
     } catch (error) {
       console.error('Failed to load routines');
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void loadRoutines();
+  }, [loadRoutines]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void loadRoutines();
+    }, [loadRoutines])
+  );
 
   const saveRoutines = async (newRoutines: Routine[]) => {
     try {

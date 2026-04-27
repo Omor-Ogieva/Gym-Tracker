@@ -1,6 +1,7 @@
 // app/(tabs)/index.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   StyleSheet,
   View,
@@ -480,7 +481,7 @@ export default function TodayScreen() {
     }
   };
 
-  const loadRoutines = async (uid: string | null) => {
+  const loadRoutines = useCallback(async (_uid: string | null) => {
     try {
       const saved = await AsyncStorage.getItem('@routines');
       if (saved) {
@@ -493,7 +494,14 @@ export default function TodayScreen() {
       console.error('Failed to load routines:', error);
       Alert.alert('Error', 'Failed to load routines');
     }
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (currentSessionId) return;
+      void loadRoutines(userId);
+    }, [currentSessionId, loadRoutines, userId])
+  );
 
   const loadSession = async (sessionId: string) => {
     try {
@@ -1445,11 +1453,13 @@ export default function TodayScreen() {
         if (!prevExercise || prevExercise.sets.length === 0) return;
         nextExerciseId = prevExercise.id;
         nextSetNumber = prevExercise.sets[prevExercise.sets.length - 1].setNumber;
+        nextField = 'reps';
       } else if (tentativeIndex >= exercise.sets.length) {
         const followingExercise = exercises[exerciseIndex + 1];
         if (!followingExercise || followingExercise.sets.length === 0) return;
         nextExerciseId = followingExercise.id;
         nextSetNumber = followingExercise.sets[0].setNumber;
+        nextField = 'reps';
       } else {
         const nextSet = exercise.sets[tentativeIndex];
         if (!nextSet) return;
@@ -1824,13 +1834,6 @@ export default function TodayScreen() {
             </View>
 
             <View style={styles.noteModalActions}>
-              <TouchableOpacity
-                style={styles.noteSecondaryButton}
-                onPress={() => setNoteDraft('')}
-                disabled={savingNote}>
-                <Text style={styles.noteSecondaryButtonText}>Clear</Text>
-              </TouchableOpacity>
-
               <TouchableOpacity
                 style={[styles.notePrimaryButton, savingNote && styles.notePrimaryButtonDisabled]}
                 onPress={handleSaveNotes}
