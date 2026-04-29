@@ -19,5 +19,11 @@ eas login
 eas build:configure
 eas build --profile development --platform android
 
+# EAS Build for production
+eas build --profile production --platform android
+
+# EAS Build for preview
+eas build --profile preview --platform android
+
 # Offline sync
 npx expo install @react-native-community/netinfo

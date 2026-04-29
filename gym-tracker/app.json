@@ -29,6 +29,15 @@
     "plugins": [
       "expo-router",
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "2.1.21",
+            "gradlePluginVersion": "8.7.3"
+          }
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Allow $(PRODUCT_NAME) to access your photos for progress photos.",
