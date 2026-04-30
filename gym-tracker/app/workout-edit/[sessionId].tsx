@@ -369,7 +369,7 @@ export default function WorkoutEditScreen() {
           {/* Progress photo */}
           {photoUrl ? (
             <View>
-              <Image source={{ uri: photoUrl }} style={styles.photoPreview} resizeMode="cover" />
+              <Image source={{ uri: photoUrl }} style={styles.photoPreview} resizeMode="contain" />
               <View style={styles.photoActions}>
                 <Pressable
                   style={[styles.photoBtn, { backgroundColor: colors.surfaceSecondary }]}
@@ -645,8 +645,9 @@ const styles = StyleSheet.create({
   addExerciseText: { fontSize: 15, fontWeight: "700" },
 
   photoPreview: {
-    width: "100%", height: 200,
+    width: "100%", aspectRatio: 3 / 4,
     borderRadius: 10, overflow: "hidden",
+    backgroundColor: "#000",
   },
   photoActions: {
     flexDirection: "row", gap: 8, marginTop: 8,

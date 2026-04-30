@@ -48,6 +48,12 @@ export const db = {
     return localDb.signIn(email, password);
   },
 
+  resetPassword: async (email: string) => {
+    if (!useSupabase()) return { error: { message: "Requires internet connection to reset password." } };
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    return { error };
+  },
+
   signOut: async () => {
     if (useSupabase()) {
       await supabase.auth.signOut();

@@ -1,7 +1,7 @@
 # Summit — Project Artifacts
 
 **Course:** CSE 217
-**Date:** March 2026
+**Date:** April 2026
 **Platform:** React Native (Expo) + Supabase
 
 ---
@@ -29,6 +29,7 @@
 | US-04 | As a user, I want to change my password while online so that I can keep my account secure. | Medium |
 | US-05 | As a user, I want to sign out of the app so that my account is not accessible to others using my device. | High |
 | US-06 | As a user, I want to use the app offline so that I can track workouts even without internet access. | High |
+| US-38 | As a user who has forgotten my password, I want to request a password reset email so that I can regain access to my account without contacting support. | High |
 
 ### Epic 2 — Routine Management
 
@@ -89,6 +90,10 @@
 ---
 
 ### Feature Descriptions
+
+#### Feature: Forgot Password (Password Reset)
+
+The sign-in screen exposes a "Forgot password?" link below the password field. Tapping it switches `auth.tsx` to a `forgot-password` mode (implemented as a `type AuthMode` string union state machine — `signin | signup | forgot-password`). In this mode only the email field is shown. Submitting calls `db.resetPassword(email)`, which delegates to `supabase.auth.resetPasswordForEmail()`. Supabase sends a password reset link to the provided address using its built-in transactional email service — no custom SMTP setup is required. On success, the user sees an inline confirmation: "Password reset email sent! Check your inbox." A "Back to Sign In" link returns to the normal login flow. The feature requires an internet connection; an offline-friendly error message is shown if the device has no network.
 
 #### Feature: Offline-First Architecture
 The app detects Supabase connectivity on startup. If unavailable, all data operations route to an in-memory local store. An "offline" badge is displayed in the UI. When the user is online, all reads and writes go to Supabase PostgreSQL.
@@ -152,6 +157,7 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | BL-03 | Implement sign up / sign in / sign out flows | DONE |
 | BL-04 | Build DB abstraction layer with offline fallback | DONE |
 | BL-05 | Implement AsyncStorage persistence for auth session | DONE |
+| BL-55 | Forgot password flow — email input + `resetPasswordForEmail` via Supabase | DONE |
 
 ### Sprint 2 — Routine Builder (DONE)
 | ID | Item | Status |
@@ -405,6 +411,7 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | `getSession()` | GET | Return current auth session |
 | `getUser()` | GET | Return current user record |
 | `changePassword(newPassword)` | PATCH | Update password (online only) |
+| `resetPassword(email)` | POST | Send Supabase password-reset email; online only |
 | `onAuthStateChange(callback)` | SUB | Subscribe to auth state events |
 
 #### User Profiles
@@ -719,6 +726,16 @@ HTML report is generated at `coverage/lcov-report/index.html`.
 | 1 | Start a workout from a routine | Active workout screen opens; minimized bar registers the session | Pass |
 | 2 | Log at least one set, tap "Finish Workout" | Session saved; active workout screen closes | Pass |
 | 3 | Verify minimized workout bar is no longer visible | Bar is dismissed; navigates to previous screen cleanly | Pass |
+
+#### TC-24: Forgot Password
+
+| Step | Action | Expected Result | Pass/Fail |
+|------|--------|-----------------|-----------|
+| 1 | On the Sign In screen, tap "Forgot password?" | Screen switches to "Reset Password" mode; only the email field and "Send Reset Email" button are shown | Pass |
+| 2 | Enter a registered email address, tap "Send Reset Email" | Success message "Password reset email sent! Check your inbox." displayed | Pass |
+| 3 | Enter an unregistered or malformed email | Supabase error message displayed inline | Pass |
+| 4 | Attempt while offline (no network) | "Requires internet connection to reset password." error shown | Pass |
+| 5 | Tap "Back to Sign In" | Screen returns to normal sign-in form; error/success messages cleared | Pass |
 
 #### TC-23: Progress Photo — Capture and Display on History Card
 

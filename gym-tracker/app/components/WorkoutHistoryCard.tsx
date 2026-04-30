@@ -25,15 +25,20 @@ type WorkoutHistoryCardProps = {
   distanceUnit?: 'km' | 'mi';
 };
 
+// Parse "YYYY-MM-DD" as local midnight, not UTC midnight
+function parseLocalDate(dateStr: string): Date {
+  return dateStr.includes("T") ? new Date(dateStr) : new Date(`${dateStr}T00:00:00`);
+}
+
 function fullDate(dateStr: string): string {
-  const d = new Date(dateStr);
+  const d = parseLocalDate(dateStr);
   return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 }
 
 function relativeDate(dateStr: string): string {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const d = new Date(dateStr);
+  const d = parseLocalDate(dateStr);
   d.setHours(0, 0, 0, 0);
   const diff = Math.round((today.getTime() - d.getTime()) / 86400000);
   if (diff === 0) return "Today";
@@ -138,7 +143,7 @@ const WorkoutHistoryCard = memo(function WorkoutHistoryCard({
       <View style={styles.dateRow}>
         <View style={[styles.dateIcon, { backgroundColor: colors.surfaceSecondary }]}>
           <Text style={[styles.dateIconText, { color: colors.primary }]}>
-            {new Date(sessionDate).getDate()}
+            {parseLocalDate(sessionDate).getDate()}
           </Text>
         </View>
         <View style={{ flex: 1 }}>

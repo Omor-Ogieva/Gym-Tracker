@@ -3,30 +3,55 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text
 import { db, isOnline } from "./backend/db";
 import { useTheme } from "./theme/ThemeContext";
 
+type AuthMode = "signin" | "signup" | "forgot-password";
+
 export default function Auth() {
   const { colors } = useTheme();
+  const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const switchMode = (next: AuthMode) => {
+    setMode(next);
+    setError(null);
+    setSuccess(null);
+  };
 
   const handleSubmit = async () => {
     setLoading(true);
     setError(null);
     setSuccess(null);
 
-    if (isSignUp) {
+    if (mode === "signup") {
       const { error } = await db.signUp(email, password, username);
       if (error) setError(error.message);
       else setSuccess("Account created! You can now sign in.");
-    } else {
+    } else if (mode === "signin") {
       const { error } = await db.signIn(email, password);
       if (error) setError(error.message);
+    } else if (mode === "forgot-password") {
+      const { error } = await db.resetPassword(email);
+      if (error) setError(error.message);
+      else setSuccess("Password reset email sent! Check your inbox.");
     }
+
     setLoading(false);
+  };
+
+  const titles: Record<AuthMode, string> = {
+    signin: "Welcome Back",
+    signup: "Create Account",
+    "forgot-password": "Reset Password",
+  };
+
+  const buttonLabels: Record<AuthMode, string> = {
+    signin: "Sign In",
+    signup: "Sign Up",
+    "forgot-password": "Send Reset Email",
   };
 
   return (
@@ -39,13 +64,11 @@ export default function Auth() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.title, { color: colors.text }]}>
-          {isSignUp ? "Create Account" : "Welcome Back"}
-        </Text>
+        <Text style={[styles.title, { color: colors.text }]}>{titles[mode]}</Text>
 
         {!isOnline && <Text style={[styles.offlineText, { color: colors.warning }]}>⚡ Offline Mode</Text>}
 
-        {isSignUp && (
+        {mode === "signup" && (
           <TextInput
             style={[styles.input, { borderColor: colors.border, backgroundColor: colors.inputBackground, color: colors.text }]}
             placeholder="Username"
@@ -68,35 +91,49 @@ export default function Auth() {
           returnKeyType="next"
         />
 
-        <TextInput
-          style={[styles.input, { borderColor: colors.border, backgroundColor: colors.inputBackground, color: colors.text }]}
-          placeholder="Password"
-          placeholderTextColor={colors.textTertiary}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          returnKeyType="done"
-          onSubmitEditing={handleSubmit}
-        />
+        {(mode === "signin" || mode === "signup") && (
+          <TextInput
+            style={[styles.input, { borderColor: colors.border, backgroundColor: colors.inputBackground, color: colors.text }]}
+            placeholder="Password"
+            placeholderTextColor={colors.textTertiary}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            returnKeyType="done"
+            onSubmitEditing={handleSubmit}
+          />
+        )}
 
-        {error && <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>}
-        {success && <Text style={[styles.successText, { color: colors.success }]}>{success}</Text>}
+        {mode === "signin" && (
+          <Pressable onPress={() => switchMode("forgot-password")} style={styles.forgotLink}>
+            <Text style={[styles.linkText, { color: colors.primary }]}>Forgot password?</Text>
+          </Pressable>
+        )}
+
+        {error && <Text style={{ color: colors.danger }}>{error}</Text>}
+        {success && <Text style={{ color: colors.success }}>{success}</Text>}
 
         <Pressable
           style={[styles.button, { backgroundColor: colors.primary, opacity: loading ? 0.6 : 1 }]}
           onPress={handleSubmit}
           disabled={loading}
         >
-          <Text style={styles.buttonText}>
-            {loading ? "Loading..." : isSignUp ? "Sign Up" : "Sign In"}
-          </Text>
+          <Text style={styles.buttonText}>{loading ? "Loading..." : buttonLabels[mode]}</Text>
         </Pressable>
 
-        <Pressable onPress={() => { setIsSignUp(!isSignUp); setError(null); setSuccess(null); }}>
-          <Text style={[styles.switchText, { color: colors.primary }]}>
-            {isSignUp ? "Already have an account? Sign In" : "Don't have an account? Sign Up"}
-          </Text>
-        </Pressable>
+        {(mode === "signin" || mode === "signup") && (
+          <Pressable onPress={() => switchMode(mode === "signin" ? "signup" : "signin")}>
+            <Text style={[styles.switchText, { color: colors.primary }]}>
+              {mode === "signup" ? "Already have an account? Sign In" : "Don't have an account? Sign Up"}
+            </Text>
+          </Pressable>
+        )}
+
+        {mode === "forgot-password" && (
+          <Pressable onPress={() => switchMode("signin")}>
+            <Text style={[styles.switchText, { color: colors.primary }]}>Back to Sign In</Text>
+          </Pressable>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -111,6 +148,6 @@ const styles = StyleSheet.create({
   button: { paddingVertical: 12, borderRadius: 8, alignItems: "center" },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
   switchText: { textAlign: "center", marginTop: 8 },
-  errorText: {},
-  successText: {},
+  forgotLink: { alignSelf: "flex-end" },
+  linkText: { fontSize: 14 },
 });
