@@ -1,80 +1,15 @@
-import { useState } from "react";
-
-type User = {
-  user_id: string;
-  username: string;
-  email: string;
-  created_at: string;
-};
-
-type Routine = {
-  routine_id: number;
-  routine_name: string;
-  description: string | null;
-  user_id: string;
-  created_at: string;
-};
-
-type ExerciseType = 'strength' | 'cardio' | 'stretching';
-
-type RoutineExercise = {
-  routine_exercise_id: number;
-  routine_id: number;
-  exercise_id: string;
-  exercise_name: string;
-  exercise_order: number;
-  exercise_type: ExerciseType;
-};
-
-type RoutineExerciseSet = {
-  routine_set_id: number;
-  routine_exercise_id: number;
-  set_number: number;
-  target_weight: number | null;
-  target_reps: number | null;
-  is_warmup: boolean;
-  target_duration_seconds: number | null;
-  target_distance_meters: number | null;
-  target_effort_level: number | null;
-};
-
-type WorkoutSession = {
-  session_id: number;
-  routine_id: number | null;
-  session_name: string;
-  session_date: string;       // date (YYYY-MM-DD)
-  start_time: string;         // time (HH:MM:SS)
-  end_time: string | null;    // time (HH:MM:SS)
-  notes: string | null;
-  photo_url: string | null;
-  created_at: string;
-  user_id: string;
-};
-
-type SessionExercise = {
-  session_exercise_id: number;
-  session_id: number;
-  exercise_id: string;
-  exercise_name: string;
-  exercise_order: number;
-  notes: string | null;
-  exercise_type: ExerciseType;
-};
-
-type SessionExerciseSet = {
-  session_set_id: number;
-  session_exercise_id: number;
-  set_number: number;
-  weight: number | null;
-  reps: number | null;
-  is_warmup: boolean;
-  completed: boolean;
-  duration_seconds: number | null;
-  distance_meters: number | null;
-  pace_sec_per_km: number | null;
-  calories: number | null;
-  effort_level: number | null;
-};
+import type {
+  User,
+  Routine,
+  ExerciseType,
+  RoutineExercise,
+  RoutineExerciseSet,
+  WorkoutSession,
+  SessionExercise,
+  SessionExerciseSet,
+  PersonalRecord,
+  CustomExercise,
+} from "./types";
 
 let localUsers: User[] = [];
 let localRoutines: Routine[] = [];
@@ -84,29 +19,6 @@ let localWorkoutSessions: WorkoutSession[] = [];
 let localSessionExercises: SessionExercise[] = [];
 let localSessionExerciseSets: SessionExerciseSet[] = [];
 let localSession: { user: { id: string; email: string } } | null = null;
-
-type PersonalRecord = {
-  pr_id: number;
-  user_id: string;
-  exercise_id: string;
-  max_weight: number | null;
-  max_volume: number | null;
-  achieved_at: string;
-  pr_type: 'strength' | 'cardio';
-  best_distance_meters: number | null;
-  best_pace_sec_per_km: number | null;
-  best_duration_seconds: number | null;
-};
-
-type CustomExercise = {
-  exercise_id: string;
-  user_id: string;
-  name: string;
-  primary_muscle: string | null;
-  equipment: string | null;
-  created_at: string;
-  exercise_type: ExerciseType;
-};
 
 let localPersonalRecords: PersonalRecord[] = [];
 let localCustomExercises: CustomExercise[] = [];
@@ -337,7 +249,7 @@ export const localDb = {
   },
 
   // Finish a workout session
-  finishWorkoutSession: async (sessionId: number, notes?: string) => {
+  finishWorkoutSession: async (sessionId: number, notes?: string | null) => {
     const now = new Date();
     localWorkoutSessions = localWorkoutSessions.map((s) =>
       s.session_id === sessionId

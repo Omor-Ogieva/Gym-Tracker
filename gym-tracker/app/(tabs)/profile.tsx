@@ -6,6 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db, isOnline } from "../backend/db";
 import { useTheme } from "../theme/ThemeContext";
 import { useUnits } from "../utils/units";
+import { logError } from "../utils/log";
 import WorkoutHistoryCard from "../components/WorkoutHistoryCard";
 import { SessionWithMeta } from "../components/WorkoutHistoryList";
 import WorkoutChart from "../components/WorkoutChart";
@@ -159,7 +160,7 @@ export default function ProfileScreen() {
       try {
         const parsed = JSON.parse(val) as StatId[];
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
+      } catch (e) { logError("profile.loadCachedStats", e); }
       return DEFAULT_STATS;
     });
 

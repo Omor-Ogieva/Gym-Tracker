@@ -236,13 +236,13 @@ export default function ExercisePicker({ visible, onSelect, onClose }: Props) {
               {search.length > 0 && filtered.length === 0 && !showCreateForm && (
                 <View style={{ alignItems: "center", marginTop: 32, paddingHorizontal: 24 }}>
                   <Text style={{ color: colors.textTertiary, fontSize: 15, marginBottom: 16 }}>
-                    No exercises found for "{search}"
+                    No exercises found for “{search}”
                   </Text>
                   <Pressable
                     onPress={() => { setNewName(search); setShowCreateForm(true); }}
                     style={{ backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10 }}
                   >
-                    <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>+ Create "{search}"</Text>
+                    <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>+ Create “{search}”</Text>
                   </Pressable>
                 </View>
               )}

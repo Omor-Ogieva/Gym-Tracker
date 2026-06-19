@@ -352,7 +352,7 @@ export default function RoutineScreen() {
             <Text style={[styles.emptyText, { color: colors.textTertiary }]}>No exercises yet</Text>
             {isEditing && (
               <Text style={[styles.emptySubText, { color: colors.textTertiary }]}>
-                Tap "Add Exercise" to build your routine
+                Tap “Add Exercise” to build your routine
               </Text>
             )}
           </View>

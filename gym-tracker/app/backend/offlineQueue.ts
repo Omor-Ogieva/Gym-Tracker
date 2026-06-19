@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { ExerciseType } from "./types";
 
 const QUEUE_KEY = "@gym_tracker_offline_sessions";
 const SESSION_ORIGIN_KEY = "@gym_tracker_active_session_origin";
@@ -19,6 +20,7 @@ export type PendingSession = {
     exercise_name: string;
     exercise_order: number;
     notes: string | null;
+    exercise_type: ExerciseType;
   }>;
   sets: Array<{
     session_exercise_id: number; // local ID
@@ -27,6 +29,11 @@ export type PendingSession = {
     reps: number | null;
     is_warmup: boolean;
     completed: boolean;
+    duration_seconds: number | null;
+    distance_meters: number | null;
+    pace_sec_per_km: number | null;
+    calories: number | null;
+    effort_level: number | null;
   }>;
 };
 

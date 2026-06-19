@@ -18,6 +18,7 @@ import { detectPRs, detectCardioPRs } from "./utils/prDetection";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { scheduleRestDoneNotification, cancelRestDoneNotification } from "./utils/notifications";
 import { useUnits } from "./utils/units";
+import { logError } from "./utils/log";
 import CardioSetRow from "./components/CardioSetRow";
 import { computePace, formatDistance, formatDuration, metersToDisplay, parseDistanceToMeters, parseDuration, formatDurationShort } from "./utils/cardioUtils";
 
@@ -90,6 +91,15 @@ export default function WorkoutScreen() {
   const skipRestTimer = useCallback(() => {
     restTimer.skip();
     cancelRestDoneNotification();
+  }, [restTimer]);
+
+  // Keep the scheduled "rest complete" notification in sync when the user
+  // extends the timer — otherwise it still fires at the original end time.
+  const handleAddRestTime = useCallback((secs: number) => {
+    restTimer.addTime(secs);
+    AsyncStorage.getItem("@gym_tracker_notifications").then((val) => {
+      if (val === "true") scheduleRestDoneNotification(restTimer.remaining + secs);
+    });
   }, [restTimer]);
 
   const totalVolume = useMemo(() => {
@@ -307,7 +317,7 @@ export default function WorkoutScreen() {
     if (session.routine_id) {
       try {
         await db.syncSessionSetsToRoutine(session.session_id, session.routine_id);
-      } catch (_) {}
+      } catch (e) { logError("finishWorkout.syncSessionSetsToRoutine", e); }
     }
 
     // Mark local session as ended so the beforeRemove listener doesn't intercept router.back()
@@ -368,7 +378,7 @@ export default function WorkoutScreen() {
           return;
         }
       }
-    } catch (_) {}
+    } catch (e) { logError("finishWorkout.prDetection", e); }
     setShowPhotoModal(true);
   }, 1000);
 
@@ -400,7 +410,7 @@ export default function WorkoutScreen() {
         // Offline or unauthenticated — store local URI so it's still visible
         await db.updateSessionPhotoUrl(sessionId, uri);
       }
-    } catch (_) {}
+    } catch (e) { logError("handleProgressPhoto", e); }
     setPhotoUploading(false);
     setShowPhotoModal(false);
     router.back();
@@ -688,7 +698,7 @@ export default function WorkoutScreen() {
       <RestTimerBanner
         remaining={restTimer.remaining}
         onSkip={skipRestTimer}
-        onAddTime={restTimer.addTime}
+        onAddTime={handleAddRestTime}
       />
 
       <ExercisePicker

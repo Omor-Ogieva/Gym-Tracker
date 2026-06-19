@@ -224,6 +224,23 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 | BL-53 | Wire photo modal into `finishWorkout()` flow in `workout.tsx` | DONE |
 | BL-54 | Display progress photo in `WorkoutHistoryCard` on Profile tab | DONE |
 
+### Sprint 7 — Code Review Hardening (DONE)
+
+Improvements identified in the June 2026 code review, implemented 2026-06-19. Ordered by priority (High → Low). After this sprint the CI gate (`npm run ci`) is green: **0 lint errors, 0 type errors, 128 tests passing**.
+
+| ID | Item | Status | Notes |
+|----|------|--------|-------|
+| BL-56 | Read-through cache for Supabase reads so routines, history, PRs and custom exercises are available on a cold start while offline | DONE | **High.** New `app/backend/readCache.ts`: successful online reads are mirrored to AsyncStorage and replayed offline; 13 read methods wrapped; cache cleared on sign-out. Closes the *read* half of DEF-06. Syncing offline-*created* routines/custom exercises split out to BL-65 |
+| BL-57 | Shared `app/backend/types.ts`; typed the `db.tsx` / `localDb.tsx` / `offlineQueue.ts` data layer; removed offline-path `as any`; extended `PendingSession` with cardio fields | DONE | **Medium.** Closes DEF-07. Typecheck went 323→0 errors (also added `@types/jest`, excluded `app-example`) |
+| BL-58 | `typecheck` + `ci` npm scripts and `.github/workflows/ci.yml` running lint + typecheck + test on push/PR | DONE | **Medium.** Surfaced that lint + typecheck were already failing; fixed the pre-existing blockers (renamed `useSupabase`→`shouldUseSupabase`, escaped JSX quotes) |
+| BL-59 | Unit tests for `cardioUtils.ts` and the extracted `syncMapping.ts` (offline ID remap) | DONE | **Medium.** Closes DEF-10. Suite grew 76→128 tests / 6→9 suites |
+| BL-60 | Rest-timer background notification reschedules on "+30 s" and cancels on skip | DONE | **Low.** Closes DEF-08 (`handleAddRestTime` in `workout.tsx`) |
+| BL-61 | Untracked `coverage/` and `app-example/`; added `coverage/` to `.gitignore` (and to tsconfig / eslint ignores) | DONE | **Low.** Closes DEF-09 |
+| BL-62 | Silent `catch (_) {}` replaced with `__DEV__`-gated `logError` (`app/utils/log.ts`) | DONE | **Low.** Applied in `workout.tsx` (sync, PR detection, photo) and `profile.tsx` (cache parse) |
+| BL-63 | Batched child deletes in `deleteWorkoutSession` and exercise inserts in `syncPendingSessions` (`.in()` / bulk insert) | DONE | **Low.** |
+| BL-64 | Remove redundant manual memoization now that the React Compiler is enabled | DEFERRED | **Low.** The compiler can bail out per-component; stripping `memo` / `useCallback` from hot paths (e.g. `SetRow`) risks perf regressions. Low value, high blast radius — intentionally not done |
+| BL-65 | Extend the offline sync queue to cover routines / custom exercises created offline, and make offline start-from-routine work from cached data | TODO | **Medium.** Remaining half of DEF-06; the BL-56 read-through cache covers reads only |
+
 ### Backlog — Future Work
 
 | ID | Item | Status | Notes |
@@ -500,7 +517,7 @@ Items are ordered by priority (High → Low). Items marked `[DONE]` are implemen
 
 | Test Type | Approach | Status |
 |-----------|----------|--------|
-| Unit Tests | Jest + `@testing-library/react-native` | **Active — 76 tests across 6 suites** |
+| Unit Tests | Jest + `@testing-library/react-native` | **Active — 128 tests across 9 suites** |
 | Integration Tests | Manual, via app | Ongoing |
 | End-to-End Tests | Manual, via device/emulator | Ongoing |
 | Static Analysis | TypeScript (`tsc`) + ESLint | Active |
@@ -523,7 +540,7 @@ Tests live in `gym-tracker/__tests__/` and run with `npm test`.
 | `useSyncManager.ts` | 100% | 100% | 100% | 100% |
 | **All files** | **100%** | **100%** | **100%** | **100%** |
 
-Total: 6 suites, 76 tests, 0 failures.
+Total: 9 suites, 128 tests, 0 failures.
 
 #### Test File Descriptions
 
@@ -535,6 +552,9 @@ Total: 6 suites, 76 tests, 0 failures.
 | `useRestTimer.test.ts` | `useRestTimer()` hook | 14 | Initial state, start/pause/reset, AsyncStorage persistence, countdown tick, completion callback, custom duration |
 | `offlineQueue.test.ts` | `offlineQueue.ts` functions | 17 | Empty queue, enqueue/append, exercise+set persistence, count tracking, index removal, key deletion on empty, session origin round-trip, overwrite, clear |
 | `useSyncManager.test.ts` | `useSyncManager()` hook | 11 | No-op when userId null, skip when 0 pending, skip when disconnected, skip when unreachable, sync on mount when pending+connected, reconnect trigger (false→true), no-op on true→true, no-op on true→false, zero synced count, event listener cleanup |
+| `cardioUtils.test.ts` | `cardioUtils.ts` | 33 | Duration digit helpers, duration parse/format, distance conversions (km/mi), pace & speed, cardio session aggregation (completed-only, best pace/distance) |
+| `syncMapping.test.ts` | `syncMapping.ts` | 9 | Local→remote exercise ID mapping by insertion order, partial-insert handling, set remap preserving all strength + cardio fields, dropping sets whose exercise failed to insert |
+| `readCache.test.ts` | `readCache.ts` | 10 | write/read round-trip, key namespacing, corrupt-JSON safety, selective clear, `cachedRead` online-caches / offline-serves-cache / offline-fallback / no-cache-on-error |
 
 To run tests with coverage:
 
@@ -762,16 +782,29 @@ ESLint is configured via `eslint.config.js` using `eslint-config-expo`:
 npx expo lint
 ```
 
+A GitHub Actions workflow (`.github/workflows/ci.yml`) runs lint + typecheck + test on every push and pull request. Run all three locally with:
+
+```bash
+npm run ci
+```
+
+As of 2026-06-19 the gate is green: 0 lint errors, 0 type errors, 128 passing tests.
+
 ---
 
 ### Known Limitations / Open Defects
 
 | ID | Description | Severity | Status |
 |----|-------------|----------|--------|
-| DEF-01 | Offline data is lost when the app is fully closed (in-memory only) | Medium | **Closed** — BL-35 implemented offline queue + sync on reconnect |
+| DEF-01 | Offline data is lost when the app is fully closed (in-memory only) | Medium | **Partially closed** — BL-35 persists *finished* sessions via the offline queue; in-progress sessions and all non-session data (routines, history, PRs, custom exercises) remain in-memory only (see DEF-06 / BL-56) |
 | DEF-02 | Routine exercises cannot be reordered after creation | Low | **Closed** — BL-36 implemented routine 3-dot menu with move up/down and edit |
 | DEF-03 | No automated test coverage | High | **Closed** — 48 unit tests added in Sprint 5 (commit `40f71f8`) |
 | DEF-04 | Password change and account deletion require internet connection | Low | By design |
 | DEF-05 | Forms have minimal client-side input validation | Medium | Open — tracked as BL-39 |
+| DEF-06 | Local store (`localDb.tsx`) is in-memory only — Supabase reads are never cached, so a cold start while offline shows empty routines/history/PRs; routines and custom exercises created offline are silently lost on reconnect because only finished sessions are queued | High | **Partially closed** — read-through cache (BL-56) now serves cached server reads offline on cold start; syncing offline-*created* routines / custom exercises remains (BL-65) |
+| DEF-07 | The `db.tsx` facade returns `any` throughout (112 `any` usages app-wide despite `strict` mode); `PendingSession` omits the cardio fields written via `as any`, so the offline queue is untyped for cardio sets | Medium | **Closed** — BL-57 (shared `types.ts`, typed data layer + offline queue) |
+| DEF-08 | Rest-timer background notification is not rescheduled when the user adds time ("+15 s"), so it fires at the original countdown end; `setOnComplete` is wired in tests but never called in-app | Low | **Closed** — BL-60 |
+| DEF-09 | Generated `coverage/` and the Expo starter `app-example/` are committed to git (the latter despite being listed in `.gitignore`) | Low | **Closed** — BL-61 |
+| DEF-10 | `cardioUtils.ts` (212 LOC of pure logic) and the offline `syncPendingSessions` ID remap have no unit tests; the reported "100%" coverage reflects only the 6 instrumented files, not the whole utility surface | Medium | **Closed** — BL-59 (`cardioUtils` + `syncMapping` tests) |
 
 ---

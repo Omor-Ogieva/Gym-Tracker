@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main, omor]
+  pull_request:
+
+# The Expo app lives in the gym-tracker/ subdirectory.
+defaults:
+  run:
+    working-directory: gym-tracker
+
+jobs:
+  quality:
+    name: Lint, typecheck & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: gym-tracker/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test -- --ci

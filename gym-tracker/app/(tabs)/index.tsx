@@ -230,7 +230,7 @@ export default function WorkoutsScreen() {
             <Ionicons name="barbell-outline" size={40} color={colors.textTertiary} />
             <Text style={[styles.emptyText, { color: colors.textTertiary }]}>No routines yet</Text>
             <Text style={[styles.emptySubText, { color: colors.textTertiary }]}>
-              Tap "New Routine" to start, or try Explore for premade programs
+              Tap “New Routine” to start, or try Explore for premade programs
             </Text>
           </View>
         ) : (

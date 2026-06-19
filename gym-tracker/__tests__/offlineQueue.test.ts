@@ -71,6 +71,7 @@ function makeSession(name = "Test Workout"): PendingSession {
         exercise_name: "Bench Press",
         exercise_order: 1,
         notes: null,
+        exercise_type: "strength",
       },
     ],
     sets: [
@@ -81,6 +82,11 @@ function makeSession(name = "Test Workout"): PendingSession {
         reps: 10,
         is_warmup: false,
         completed: true,
+        duration_seconds: null,
+        distance_meters: null,
+        pace_sec_per_km: null,
+        calories: null,
+        effort_level: null,
       },
     ],
   };
